@@ -17,12 +17,26 @@ variable "prefix" {
 
 variable "github_owner" {
   type        = string
-  description = "GitHub user or organisation owning the repo (lowercase)."
+  description = "GitHub user or organisation owning the repo, with its exact case."
 }
 
 variable "github_repo" {
   type        = string
   description = "GitHub repository name."
+}
+
+# GitHub's OIDC subject includes numeric IDs ("repo:Owner@123/repo@456:...").
+# They are shown in the "subject claim" line of a failed azure/login step.
+variable "github_owner_id" {
+  type        = string
+  default     = null
+  description = "Numeric GitHub owner ID, if GitHub sends it in the OIDC subject."
+}
+
+variable "github_repo_id" {
+  type        = string
+  default     = null
+  description = "Numeric GitHub repository ID, if GitHub sends it in the OIDC subject."
 }
 
 variable "entra_admin_login" {

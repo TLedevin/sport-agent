@@ -1,7 +1,10 @@
 # Copy to terraform.tfvars (git-ignored) and fill in.
 subscription_id   = "00000000-0000-0000-0000-000000000000"
-github_owner      = "your-github-username"
+github_owner      = "YourGitHubName" # exact case
 github_repo       = "sport-agent"
+# Numeric IDs from the "subject claim" line of the azure/login step, if GitHub sends them:
+# github_owner_id = "123456"
+# github_repo_id  = "7891011"
 entra_admin_login = "you@example.com"
 app_password      = "choose-a-long-password"
 

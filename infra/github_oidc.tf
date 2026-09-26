@@ -14,7 +14,15 @@ resource "azuread_application_federated_identity_credential" "main_branch" {
   display_name   = "github-main"
   audiences      = ["api://AzureADTokenExchange"]
   issuer         = "https://token.actions.githubusercontent.com"
-  subject        = "repo:${var.github_owner}/${var.github_repo}:ref:refs/heads/main"
+  subject        = "repo:${local.github_repo_claim}:ref:refs/heads/main"
+}
+
+locals {
+  github_repo_claim = (
+    var.github_owner_id != null && var.github_repo_id != null
+    ? "${var.github_owner}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}"
+    : "${var.github_owner}/${var.github_repo}"
+  )
 }
 
 resource "azurerm_role_assignment" "github_containerapp" {
