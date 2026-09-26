@@ -4,13 +4,14 @@ Python 3.12, managed with [uv](https://docs.astral.sh/uv/). uv downloads Python 
 
 ## Run locally
 
-The easiest way, from the repo root, starts the backend and frontend together:
+The easiest way is VS Code's **Run and Debug** panel (Ctrl+Shift+D), using `.vscode/launch.json`:
 
-```powershell
-.\dev.ps1 -Seed      # -Seed adds fake activities; -Reset wipes the local database
-```
+- **Full stack (backend + frontend)**: API on :8000, Vite on :5173, and Chrome opens with the debugger attached. Local password: `dev-password` (from `backend/.env`).
+- **Seed sample activities**: fake activities, to test without Garmin.
+- **Connect Garmin (local backend)**: your real Garmin data, locally.
+- Reset the local database with **Terminal → Run Task → backend: reset local database**.
 
-Or run the backend alone:
+Or from a terminal:
 
 ```powershell
 cd backend

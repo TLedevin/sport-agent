@@ -1,0 +1,47 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // Creates backend/.env on first run (local password: dev-password) and installs Python packages.
+      "label": "backend: prepare",
+      "type": "shell",
+      "command": "if (-not (Test-Path .env)) { Copy-Item .env.example .env }; uv sync --quiet",
+      "options": {
+        "cwd": "${workspaceFolder}/backend",
+        "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
+      },
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": []
+    },
+    {
+      "label": "frontend: prepare",
+      "type": "shell",
+      "command": "if (-not (Test-Path node_modules)) { npm install --no-fund --no-audit }",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend",
+        "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
+      },
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": []
+    },
+    {
+      // Terminal > Run Task... > "backend: reset local database". Stop the backend first.
+      "label": "backend: reset local database",
+      "type": "shell",
+      "command": "if (Test-Path local.db) { Remove-Item local.db; 'Local database deleted.' } else { 'No local database.' }",
+      "options": {
+        "cwd": "${workspaceFolder}/backend",
+        "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "backend: tests",
+      "type": "shell",
+      "command": "uv run pytest",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "group": "test",
+      "problemMatcher": []
+    }
+  ]
+}

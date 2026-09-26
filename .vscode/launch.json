@@ -1,0 +1,65 @@
+{
+  // Run and Debug panel (Ctrl+Shift+D). Everything here uses the LOCAL
+  // SQLite database (backend/local.db), never Azure.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend (FastAPI)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["app.main:app", "--port", "8000"],
+      "cwd": "${workspaceFolder}/backend",
+      "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "preLaunchTask": "backend: prepare",
+      "justMyCode": true
+    },
+    {
+      // Starts Vite, then opens Chrome with the debugger attached when the server is ready.
+      "name": "Frontend (Vite + Chrome)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "${workspaceFolder}/frontend",
+      "env": { "NO_COLOR": "1" }, // plain output, so serverReadyAction can spot the URL
+      "preLaunchTask": "frontend: prepare",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"],
+      "serverReadyAction": {
+        "pattern": "Local:.+?(\\d{4,5})",
+        "uriFormat": "http://localhost:%s",
+        "action": "debugWithChrome",
+        "webRoot": "${workspaceFolder}/frontend"
+      }
+    },
+    {
+      "name": "Seed sample activities",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/scripts/seed_sample_data.py",
+      "cwd": "${workspaceFolder}/backend",
+      "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "preLaunchTask": "backend: prepare"
+    },
+    {
+      // Asks for your Garmin email, password and MFA code in the terminal,
+      // then stores the tokens in the local backend (start it first).
+      "name": "Connect Garmin (local backend)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/scripts/garmin_login.py",
+      "cwd": "${workspaceFolder}/backend",
+      "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
+      "console": "integratedTerminal"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full stack (backend + frontend)",
+      "configurations": ["Backend (FastAPI)", "Frontend (Vite + Chrome)"],
+      "stopAll": true
+    }
+  ]
+}
