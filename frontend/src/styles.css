@@ -1,0 +1,287 @@
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --border: #e3e6eb;
+  --text: #1a1d23;
+  --text-secondary: #4a515c;
+  --text-muted: #6b7280;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-text: #ffffff;
+  --info-bg: #eaf1fe;
+  --warning-bg: #fdf3dc;
+  --warning-border: #e9c46a;
+  --error-bg: #fde8e8;
+  --error-border: #e59a9a;
+  --radius: 10px;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111318;
+    --surface: #1a1d24;
+    --border: #2c313b;
+    --text: #e8eaee;
+    --text-secondary: #b4bac4;
+    --text-muted: #8b93a0;
+    --accent: #5b8def;
+    --accent-hover: #7aa3f3;
+    --accent-text: #0b1020;
+    --info-bg: #1b2740;
+    --warning-bg: #3a2f14;
+    --warning-border: #8a6d1f;
+    --error-bg: #3d1c1c;
+    --error-border: #8f3b3b;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+}
+
+h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+h2 {
+  font-size: 1rem;
+  margin: 0 0 12px;
+}
+
+code {
+  font-size: 0.85em;
+  background: var(--bg);
+  padding: 1px 4px;
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+button {
+  font: inherit;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+button.ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+
+button.small {
+  padding: 2px 8px;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.small {
+  font-size: 0.85rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+/* Login */
+
+.login {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.login-card h1 {
+  margin-bottom: 8px;
+}
+
+.login-card input {
+  font: inherit;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.error {
+  color: var(--text);
+  background: var(--error-bg);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 0;
+}
+
+/* Dashboard */
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px 16px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.actions .muted {
+  font-size: 0.9rem;
+  margin-right: 4px;
+}
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--info-bg);
+}
+
+.notice > div {
+  min-width: 0; /* lets long commands wrap instead of widening the page */
+}
+
+.notice.warning {
+  background: var(--warning-bg);
+  border-color: var(--warning-border);
+}
+
+.notice.error {
+  background: var(--error-bg);
+  border-color: var(--error-border);
+}
+
+.loading {
+  color: var(--text-secondary);
+  padding: 40px 0;
+  text-align: center;
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.tile-label {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.tile-value {
+  font-size: 1.9rem;
+  font-weight: 600;
+  margin: 2px 0;
+}
+
+.tile-sub {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.activity-name {
+  font-weight: 500;
+}
+
+.load-more {
+  margin-top: 12px;
+}
+
+.activity-cell {
+  min-width: 160px;
+}
