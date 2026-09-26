@@ -44,15 +44,29 @@
       "preLaunchTask": "backend: prepare"
     },
     {
-      // Asks for your Garmin email, password and MFA code in the terminal,
-      // then stores the tokens in the local backend (start it first).
-      "name": "Connect Garmin (local backend)",
+      // Real Garmin data: logs in with GARMIN_EMAIL / GARMIN_PASSWORD from backend/.env
+      // (MFA code typed in the terminal), prints your latest activities as the app converts them.
+      "name": "Check Garmin connector",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/backend/scripts/garmin_login.py",
+      "program": "${workspaceFolder}/backend/scripts/check_garmin.py",
+      "args": ["--limit", "10"],
       "cwd": "${workspaceFolder}/backend",
       "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
-      "console": "integratedTerminal"
+      "console": "integratedTerminal",
+      "preLaunchTask": "backend: prepare"
+    },
+    {
+      // Same, then stores the tokens in the local database so Refresh in the local app uses real data.
+      "name": "Check Garmin connector + connect local app",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/scripts/check_garmin.py",
+      "args": ["--limit", "10", "--save-local"],
+      "cwd": "${workspaceFolder}/backend",
+      "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
+      "console": "integratedTerminal",
+      "preLaunchTask": "backend: prepare"
     }
   ],
   "compounds": [

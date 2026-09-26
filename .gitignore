@@ -14,6 +14,7 @@ __pycache__/
 .venv/
 .env
 *.db
+.garmin_tokens.json
 .pytest_cache/
 
 # Node

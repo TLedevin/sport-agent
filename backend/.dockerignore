@@ -1,5 +1,6 @@
 .venv
 .env
+.garmin_tokens.json
 *.db
 __pycache__
 .pytest_cache

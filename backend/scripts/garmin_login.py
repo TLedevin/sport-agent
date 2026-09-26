@@ -8,9 +8,12 @@ Run it again if the app says Garmin needs reconnecting.
 """
 
 import argparse
+import os
 from getpass import getpass
+from pathlib import Path
 
 import httpx
+from dotenv import load_dotenv
 from garminconnect import Garmin
 
 
@@ -20,8 +23,10 @@ def main() -> None:
     args = parser.parse_args()
     api = args.api.rstrip("/")
 
-    email = input("Garmin email: ")
-    password = getpass("Garmin password: ")
+    # GARMIN_EMAIL / GARMIN_PASSWORD from backend/.env, if set.
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+    email = os.getenv("GARMIN_EMAIL") or input("Garmin email: ")
+    password = os.getenv("GARMIN_PASSWORD") or getpass("Garmin password: ")
     garmin = Garmin(email, password, prompt_mfa=lambda: input("Garmin MFA code: "))
     garmin.login()
     print(f"Logged into Garmin as {garmin.get_full_name()}")

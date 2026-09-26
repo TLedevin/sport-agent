@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { api, ApiError, type Activity, type GarminStatus, type PeriodStats, type Stats } from "./api";
+import { api, API_URL, ApiError, IS_LOCAL, type Activity, type GarminStatus, type PeriodStats, type Stats } from "./api";
 import { activityDate, clock, hours, km, meters, paceOrSpeed, sportLabel, timeAgo } from "./format";
 
 const PAGE_SIZE = 50;
@@ -8,10 +8,15 @@ type Notice = { kind: "info" | "warning" | "error"; content: ReactNode };
 
 const reconnectNotice: Notice = {
   kind: "warning",
-  content: (
+  content: IS_LOCAL ? (
+    <>
+      Garmin isn't connected to your local app. In VS Code, run the debug configuration{" "}
+      <strong>Check Garmin connector + connect local app</strong>, then click Refresh.
+    </>
+  ) : (
     <>
       Garmin isn't connected. On your PC, in <code>backend/</code>, run{" "}
-      <code>uv run python scripts/garmin_login.py --api {import.meta.env.VITE_API_URL}</code>
+      <code>uv run python scripts/garmin_login.py --api {API_URL}</code>
     </>
   ),
 };

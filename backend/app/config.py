@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     # Allowed browser origin (CORS).
     frontend_url: str = "http://localhost:5173"
 
+    # Local scripts only (never set in Azure): Garmin credentials from backend/.env.
+    garmin_email: str | None = None
+    garmin_password: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:
