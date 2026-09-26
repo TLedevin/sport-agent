@@ -115,5 +115,9 @@ def test_full_then_incremental_sync(auth, monkeypatch):
     status = client.get("/api/garmin/status", headers=auth).json()
     assert status["connected"] is True
 
-    stats = client.get("/api/stats", headers=auth).json()
-    assert set(stats) == {"week", "month", "year"}
+    assert rows[0]["sport_family"] == "running"
+
+    dash = client.get("/api/dashboard?today=2026-02-20", headers=auth).json()
+    assert set(dash) == {"today", "periods", "weekly", "breakdown", "records"}
+    assert dash["today"] == "2026-02-20"
+    assert len(dash["weekly"]) == 12

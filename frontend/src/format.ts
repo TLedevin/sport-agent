@@ -52,6 +52,22 @@ export function activityDate(localIso: string): string {
   });
 }
 
+/** "2026-09-21" -> "21 Sep" (or "21 Sep 2025" when not this year) */
+export function shortDate(isoDate: string): string {
+  const date = new Date(`${isoDate}T00:00:00`);
+  return date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: date.getFullYear() === new Date().getFullYear() ? undefined : "numeric",
+  });
+}
+
+/** Relative change, or null when there's nothing to compare against. */
+export function change(current: number, previous: number): number | null {
+  if (previous <= 0) return null;
+  return (current - previous) / previous;
+}
+
 export function timeAgo(iso: string | null): string {
   if (!iso) return "never";
   const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);

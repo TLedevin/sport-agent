@@ -22,7 +22,11 @@ export default function Login({ onLogin }: { onLogin: (token: string) => void })
   return (
     <main className="login">
       <form className="card login-card" onSubmit={submit}>
-        <h1>Sport Agent</h1>
+        <div className="brand login-brand">
+          <span className="brand-mark" aria-hidden />
+          Sport Agent
+        </div>
+        <p className="login-sub">Your training, at a glance.</p>
         <label htmlFor="password">Password</label>
         <input
           id="password"
@@ -34,11 +38,11 @@ export default function Login({ onLogin }: { onLogin: (token: string) => void })
           onChange={(e) => setPassword(e.target.value)}
         />
         {error && (
-          <p className="error" role="alert">
+          <p className="form-error" role="alert">
             {error}
           </p>
         )}
-        <button type="submit" className="primary" disabled={busy || !password}>
+        <button type="submit" className="button primary block" disabled={busy || !password}>
           {busy ? "Logging in…" : "Log in"}
         </button>
       </form>

@@ -1,19 +1,20 @@
 import logging
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from garminconnect import GarminConnectAuthenticationError, GarminConnectTooManyRequestsError
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import garmin
+from . import dashboard, garmin
 from .auth import check_password, create_session, require_session
 from .config import get_settings
 from .db import get_db, wake_database
 from .models import Activity, GarminAuth
+from .sports import sport_family
 
 logging.basicConfig(level=logging.INFO)
 
@@ -75,6 +76,7 @@ def list_activities(limit: int = 50, offset: int = 0, db: Session = Depends(get_
             "id": a.id,
             "name": a.name,
             "sport_type": a.sport_type,
+            "sport_family": sport_family(a.sport_type),
             "start_time_utc": _iso_utc(a.start_time_utc),
             "start_time_local": a.start_time_local.isoformat(),
             "distance": a.distance,
@@ -90,31 +92,34 @@ def list_activities(limit: int = 50, offset: int = 0, db: Session = Depends(get_
     ]
 
 
-@app.get("/api/stats", dependencies=authed)
-def stats(db: Session = Depends(get_db)) -> dict:
-    now = datetime.now(UTC).replace(tzinfo=None)
-    periods = {
-        "week": now - timedelta(days=7),
-        "month": now.replace(day=1, hour=0, minute=0, second=0, microsecond=0),
-        "year": now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0),
-    }
-    result = {}
-    for key, since in periods.items():
-        count, distance, duration, elevation = db.execute(
-            select(
-                func.count(Activity.id),
-                func.coalesce(func.sum(Activity.distance), 0),
-                func.coalesce(func.sum(Activity.duration), 0),
-                func.coalesce(func.sum(Activity.elevation_gain), 0),
-            ).where(Activity.start_time_utc >= since)
-        ).one()
-        result[key] = {
-            "count": count,
-            "distance": float(distance),
-            "duration": float(duration),
-            "elevation_gain": float(elevation),
-        }
-    return result
+@app.get("/api/dashboard", dependencies=authed)
+def get_dashboard(today: date | None = None, db: Session = Depends(get_db)) -> dict:
+    """`today` is the browser's local date, so weeks and months match the athlete's calendar."""
+    columns = (
+        Activity.id,
+        Activity.name,
+        Activity.sport_type,
+        Activity.start_time_local,
+        Activity.distance,
+        Activity.duration,
+        Activity.moving_duration,
+        Activity.elevation_gain,
+        Activity.average_speed,
+    )
+    rows = [
+        dashboard.Row(
+            id=r.id,
+            name=r.name,
+            sport_type=r.sport_type,
+            start=r.start_time_local,
+            distance=r.distance or 0,
+            time=r.moving_duration or r.duration or 0,
+            elevation=r.elevation_gain or 0,
+            speed=r.average_speed,
+        )
+        for r in db.execute(select(*columns))
+    ]
+    return dashboard.build(rows, today or datetime.now(UTC).date())
 
 
 @app.get("/api/garmin/status", dependencies=authed)
