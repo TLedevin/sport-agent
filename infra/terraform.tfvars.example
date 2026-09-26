@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars (git-ignored) and fill in.
+subscription_id   = "00000000-0000-0000-0000-000000000000"
+github_owner      = "your-github-username"
+github_repo       = "sport-agent"
+entra_admin_login = "you@example.com"
+app_password      = "choose-a-long-password"
+
+# Optional
+# location = "westeurope"
+# my_ip    = "1.2.3.4"
