@@ -4,6 +4,14 @@ Python 3.12, managed with [uv](https://docs.astral.sh/uv/). uv downloads Python 
 
 ## Run locally
 
+The easiest way, from the repo root, starts the backend and frontend together:
+
+```powershell
+.\dev.ps1 -Seed      # -Seed adds fake activities; -Reset wipes the local database
+```
+
+Or run the backend alone:
+
 ```powershell
 cd backend
 copy .env.example .env
