@@ -51,6 +51,17 @@ class ActivityDetail(Base):
     fetched_at: Mapped[datetime] = mapped_column(DateTime)
 
 
+class ActivityRoute(Base):
+    """Simplified route for the map of all activities, as an encoded polyline (see routes.py).
+    Empty when the activity has no GPS."""
+
+    __tablename__ = "activity_routes"
+
+    activity_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    polyline: Mapped[str] = mapped_column(Text)
+    computed_at: Mapped[datetime] = mapped_column(DateTime)
+
+
 class Gear(Base):
     """Equipment from Garmin Connect (shoes, bikes...), with Garmin's own usage totals."""
 

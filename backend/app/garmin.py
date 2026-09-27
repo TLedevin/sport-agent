@@ -16,6 +16,7 @@ from garminconnect import (
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from . import routes
 from .models import Activity, ActivityDetail, ActivityGear, ActivityTrack, GarminAuth, Gear
 from .sports import sport_family
 
@@ -215,6 +216,7 @@ def track(db: Session, activity: Activity, client: Garmin | None = None) -> list
             if p.get("lat") is not None and p.get("lon") is not None
         ]
     db.add(ActivityTrack(activity_id=activity.id, points=points, fetched_at=_utcnow()))
+    routes.save(db, activity.id, points)
     db.commit()
     return points
 
@@ -331,6 +333,7 @@ def details(db: Session, activity: Activity, client: Garmin | None = None) -> di
     data, complete = fetch_details(activity, client or connect(db))
     if complete:
         db.merge(ActivityDetail(activity_id=activity.id, data=data, fetched_at=_utcnow()))
+        routes.save(db, activity.id, routes.points_from_details(data))
         db.commit()
     return data
 
@@ -362,6 +365,7 @@ def backfill_details(db: Session, limit: int | None = None) -> int:
                 break
             if complete:
                 db.merge(ActivityDetail(activity_id=activity.id, data=data, fetched_at=_utcnow()))
+                routes.save(db, activity.id, routes.points_from_details(data))
                 db.commit()
                 stored += 1
         log.info("Details backfill stored %d activities", stored)

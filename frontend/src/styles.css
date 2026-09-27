@@ -273,11 +273,28 @@ input:focus-visible {
     order: 3;
     width: 100%;
   }
+  .nav-link {
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: center;
+    padding: 7px 4px;
+    gap: 5px;
+  }
   .sync-status {
     display: none;
   }
   .content {
     padding-top: 20px;
+  }
+}
+
+/* Four tabs across a phone: the labels alone fit. */
+@media (max-width: 420px) {
+  .nav-link {
+    font-size: 0.85rem;
+  }
+  .nav-link svg {
+    display: none;
   }
 }
 
@@ -630,6 +647,85 @@ input:focus-visible {
 @media (max-width: 860px) {
   .activity-card.with-map {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- Map of all activities ---------- */
+
+.map-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(340px, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.map-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: sticky;
+  top: 84px; /* below the sticky header */
+}
+
+.all-activities-map {
+  height: calc(100vh - 260px);
+  min-height: 380px;
+}
+
+.all-activities-map.leaflet-container {
+  cursor: grab;
+}
+
+.map-note {
+  font-size: 0.8rem;
+}
+
+.map-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+/* A narrow column: names wrap instead of pushing the numbers out of the card. */
+.map-list .activity-cell {
+  min-width: 0;
+  gap: 10px;
+}
+
+.map-list .data-table th,
+.map-list .data-table.compact td {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.map-list .data-table th:first-child,
+.map-list .data-table td:first-child {
+  padding-left: 0;
+}
+
+.map-list .data-table th:last-child,
+.map-list .data-table td:last-child {
+  padding-right: 0;
+}
+
+.data-table tbody tr.hovered td {
+  background: var(--surface-2);
+}
+
+@media (max-width: 860px) {
+  .map-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .map-card {
+    position: static;
+  }
+
+  .all-activities-map {
+    height: 55vh;
+    min-height: 300px;
   }
 }
 

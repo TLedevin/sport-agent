@@ -7,16 +7,17 @@ from typing import Literal
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from garminconnect import GarminConnectAuthenticationError, GarminConnectTooManyRequestsError
 from pydantic import BaseModel
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
-from . import dashboard, garmin
+from . import dashboard, garmin, routes
 from .auth import check_password, create_session, require_session
 from .config import get_settings
 from .db import SessionLocal, get_db, wake_database
-from .models import Activity, ActivityGear, GarminAuth, Gear
+from .models import Activity, ActivityGear, ActivityRoute, GarminAuth, Gear
 from .sports import FAMILIES, sport_family
 
 logging.basicConfig(level=logging.INFO)
@@ -28,6 +29,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1000)  # the map sends every route at once
 
 authed = [Depends(require_session)]
 
@@ -203,6 +205,45 @@ def get_track(activity_id: int, db: Session = Depends(get_db)) -> dict:
     return {"points": points}
 
 
+@app.get("/api/map", dependencies=authed)
+def get_map(db: Session = Depends(get_db)) -> list[dict]:
+    """Every activity with a known position, newest first: its simplified route (an encoded
+    polyline) when one is stored, else just its start point. The page filters by the visible
+    area itself, so the whole set comes in one request."""
+    start_lat = Activity.raw["startLatitude"].as_float()
+    start_lon = Activity.raw["startLongitude"].as_float()
+    rows = db.execute(
+        select(
+            Activity.id,
+            Activity.name,
+            Activity.sport_type,
+            Activity.start_time_local,
+            Activity.distance,
+            Activity.duration,
+            start_lat.label("start_lat"),
+            start_lon.label("start_lon"),
+            ActivityRoute.polyline,
+        )
+        .outerjoin(ActivityRoute, ActivityRoute.activity_id == Activity.id)
+        .order_by(Activity.start_time_utc.desc(), Activity.id.desc())
+    ).all()
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "sport_type": r.sport_type,
+            "sport_family": sport_family(r.sport_type),
+            "start_time_local": r.start_time_local.isoformat(),
+            "distance": r.distance,
+            "duration": r.duration,
+            "start": [r.start_lat, r.start_lon] if r.start_lat is not None and r.start_lon is not None else None,
+            "route": r.polyline or None,
+        }
+        for r in rows
+        if r.polyline or (r.start_lat is not None and r.start_lon is not None)
+    ]
+
+
 @app.get("/api/dashboard", dependencies=authed)
 def get_dashboard(today: date | None = None, db: Session = Depends(get_db)) -> dict:
     """`today` is the browser's local date, so weeks and months match the athlete's calendar."""
@@ -296,7 +337,13 @@ def put_garmin_tokens(body: TokensRequest, db: Session = Depends(get_db)) -> dic
 
 
 def _backfill_details() -> None:
-    """After the response: pre-load details for activities that don't have them yet."""
+    """After the response: map routes for data stored before routes existed, then pre-load
+    details for activities that don't have them yet."""
+    try:
+        with SessionLocal() as db:
+            routes.backfill(db)
+    except Exception:
+        logging.getLogger(__name__).exception("Route backfill failed; the next sync retries")
     try:
         with SessionLocal() as db:
             garmin.backfill_details(db)

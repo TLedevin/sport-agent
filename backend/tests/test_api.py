@@ -19,7 +19,7 @@ db_module.engine = db_module.create_engine(
 )
 db_module.SessionLocal.configure(bind=db_module.engine)
 
-from app import garmin  # noqa: E402
+from app import garmin, routes  # noqa: E402
 from app.main import app  # noqa: E402
 
 client = TestClient(app)
@@ -439,3 +439,50 @@ def test_activity_list_filters_by_sport(auth, monkeypatch):
     assert client.get(f"/api/activities?{only_2031}&sport=swimming", headers=auth).json()["total"] == 0
     assert {"running", "cycling"} <= set(r["families"])  # the families that exist, for the buttons
     assert client.get("/api/activities?sport=chess", headers=auth).status_code == 422
+
+
+def test_map_lists_routes_and_start_points(auth, monkeypatch):
+    client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
+    gps = {"hasPolyline": True, "startLatitude": 45.1, "startLongitude": 5.7}
+    fake = FakeGarmin([
+        {**activity(11003, "Ride"), **gps},  # details bring GPS samples
+        {**activity(11002, "Trail"), **gps},  # track opened on its page
+        {**activity(11001, "Run"), **gps, "manualActivity": True},  # start point only: no samples
+        {**activity(11000, "Treadmill"), "manualActivity": True},  # no position at all
+    ])
+    fake.detail_overrides = {"series": lambda: {
+        "metricDescriptors": [
+            {"metricsIndex": 0, "key": "directLatitude", "unit": {"key": "dd"}},
+            {"metricsIndex": 1, "key": "directLongitude", "unit": {"key": "dd"}},
+        ],
+        "activityDetailMetrics": [{"metrics": [45.1, 5.7]}, {"metrics": [None, None]}, {"metrics": [45.2, 5.8]}],
+    }}
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    monkeypatch.setattr(garmin, "BACKFILL_BATCH", 100)
+    client.post("/api/sync", headers=auth)
+    client.get("/api/activities/11002/track", headers=auth)
+
+    items = {a["id"]: a for a in client.get("/api/map", headers=auth).json() if 11000 <= a["id"] < 11100}
+    assert list(items) == [11003, 11002, 11001]  # newest first; no position: not on the map
+    assert items[11003]["route"] == routes.encode([[45.1, 5.7], [45.2, 5.8]])  # sample without a fix dropped
+    assert items[11002]["route"] == routes.encode([[48.9, 2.1]])  # the track replaces the details' route
+    assert items[11001]["route"] is None
+    assert items[11001]["start"] == [45.1, 5.7]
+    assert items[11001]["sport_family"] == "running"
+
+
+def test_routes_are_built_for_data_stored_before_routes_existed(auth, monkeypatch):
+    from app.models import ActivityRoute, ActivityTrack
+
+    client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
+    fake = FakeGarmin([{**activity(12001, "Run"), "hasPolyline": True}])
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    monkeypatch.setattr(garmin, "BACKFILL_BATCH", 0)
+    client.post("/api/sync", headers=auth)
+    with db_module.SessionLocal() as db:
+        db.add(ActivityTrack(activity_id=12001, points=[[45.1, 5.7], [45.2, 5.8]], fetched_at=datetime(2026, 1, 1)))
+        db.commit()
+        assert db.get(ActivityRoute, 12001) is None
+        assert routes.backfill(db) >= 1
+        assert db.get(ActivityRoute, 12001).polyline == routes.encode([[45.1, 5.7], [45.2, 5.8]])
+        assert routes.backfill(db) == 0  # nothing left to build

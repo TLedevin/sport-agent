@@ -40,6 +40,7 @@ You type your Garmin email, password and MFA code **on your PC**. Only the resul
 | POST | `/api/auth/login` | – | `{password}` → `{token}` |
 | GET | `/api/activities?limit&offset` | ✓ | Newest first |
 | GET | `/api/dashboard?today=YYYY-MM-DD` | ✓ | Period totals vs previous period, 12 weekly buckets by sport, yearly breakdown, records |
+| GET | `/api/map` | ✓ | Every activity with a position: simplified route (encoded polyline) or start point |
 | POST | `/api/sync` | ✓ | Import new Garmin activities (the Refresh button) |
 | GET | `/api/garmin/status` | ✓ | Connected? last sync? |
 | PUT | `/api/garmin/tokens` | ✓ | Used by `garmin_login.py` |
