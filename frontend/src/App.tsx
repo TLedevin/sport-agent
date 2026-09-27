@@ -7,6 +7,7 @@ import ActivitiesPage from "./pages/ActivitiesPage";
 import ActivityDetailPage from "./pages/ActivityDetailPage";
 import DashboardPage from "./pages/DashboardPage";
 import EquipmentPage from "./pages/EquipmentPage";
+import FitnessPage from "./pages/FitnessPage";
 import MapPage from "./pages/MapPage";
 import { SyncProvider } from "./sync";
 
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="activities" element={<ActivitiesPage />} />
           <Route path="activities/:id" element={<ActivityDetailPage />} />
           <Route path="map" element={<MapPage />} />
+          <Route path="fitness" element={<FitnessPage />} />
           <Route path="equipment" element={<EquipmentPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

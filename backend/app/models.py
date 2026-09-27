@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import JSON, BigInteger, DateTime, Float, Integer, String, Text, Unicode
+from sqlalchemy import JSON, BigInteger, Date, DateTime, Float, Integer, String, Text, Unicode
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -87,6 +87,27 @@ class ActivityGear(Base):
 
     activity_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
     gear_uuid: Mapped[str] = mapped_column(String(64), primary_key=True, index=True)
+
+
+class FitnessValue(Base):
+    """One fitness metric on one day: VO2 max, fitness age, race predictions (seconds),
+    endurance and hill scores. See fitness.py."""
+
+    __tablename__ = "fitness_values"
+
+    calendar_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    metric: Mapped[str] = mapped_column(String(32), primary_key=True)  # e.g. vo2max_running
+    value: Mapped[float] = mapped_column(Float)
+
+
+class FitnessSource(Base):
+    """How far each Garmin fitness endpoint has been read, so a sync only asks for recent days."""
+
+    __tablename__ = "fitness_sources"
+
+    source: Mapped[str] = mapped_column(String(32), primary_key=True)
+    fetched_through: Mapped[date] = mapped_column(Date)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime)
 
 
 class GarminAuth(Base):

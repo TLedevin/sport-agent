@@ -13,11 +13,11 @@ from pydantic import BaseModel
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
-from . import dashboard, garmin, routes
+from . import dashboard, fitness, garmin, routes
 from .auth import check_password, create_session, require_session
 from .config import get_settings
 from .db import SessionLocal, get_db, wake_database
-from .models import Activity, ActivityGear, ActivityRoute, GarminAuth, Gear
+from .models import Activity, ActivityGear, ActivityRoute, FitnessSource, FitnessValue, GarminAuth, Gear
 from .sports import FAMILIES, sport_family
 
 logging.basicConfig(level=logging.INFO)
@@ -244,6 +244,18 @@ def get_map(db: Session = Depends(get_db)) -> list[dict]:
     ]
 
 
+@app.get("/api/fitness", dependencies=authed)
+def get_fitness(db: Session = Depends(get_db)) -> dict:
+    """Every fitness value as [date, value] pairs per metric, oldest first. `checked` tells
+    "not read from Garmin yet" apart from "Garmin has no such data for this watch"."""
+    series: dict[str, list] = {}
+    for r in db.execute(
+        select(FitnessValue.calendar_date, FitnessValue.metric, FitnessValue.value).order_by(FitnessValue.calendar_date)
+    ):
+        series.setdefault(r.metric, []).append([r.calendar_date.isoformat(), r.value])
+    return {"series": series, "checked": db.scalar(select(func.count()).select_from(FitnessSource)) > 0}
+
+
 @app.get("/api/dashboard", dependencies=authed)
 def get_dashboard(today: date | None = None, db: Session = Depends(get_db)) -> dict:
     """`today` is the browser's local date, so weeks and months match the athlete's calendar."""
@@ -337,13 +349,21 @@ def put_garmin_tokens(body: TokensRequest, db: Session = Depends(get_db)) -> dic
 
 
 def _backfill_details() -> None:
-    """After the response: map routes for data stored before routes existed, then pre-load
-    details for activities that don't have them yet."""
+    """After the response: map routes for data stored before routes existed, fitness trends,
+    then details for activities that don't have them yet."""
     try:
         with SessionLocal() as db:
             routes.backfill(db)
     except Exception:
         logging.getLogger(__name__).exception("Route backfill failed; the next sync retries")
+    try:
+        with SessionLocal() as db:
+            fitness.sync(db)
+    except GarminConnectTooManyRequestsError:
+        logging.getLogger(__name__).info("Fitness sync paused: Garmin rate limit")
+        return  # the details backfill would hit the same limit
+    except Exception:
+        logging.getLogger(__name__).exception("Fitness sync failed; the next sync retries")
     try:
         with SessionLocal() as db:
             garmin.backfill_details(db)

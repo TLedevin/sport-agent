@@ -8,6 +8,9 @@ os.environ.update(
 )
 
 import pytest  # noqa: E402
+from garminconnect import GarminConnectNotFoundError as GarminConnectNotFound  # noqa: E402
+from garminconnect import GarminConnectTooManyRequestsError  # noqa: E402
+from sqlalchemy import func, select  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
@@ -60,6 +63,9 @@ class FakeGarmin:
         # replacements (endpoint -> function) to simulate missing data or failures
         self.detail_calls: list[str] = []
         self.detail_overrides: dict = {}
+        # fitness endpoints: "<endpoint> <first> <last>" for each call; payload (or exception) per endpoint
+        self.fitness_calls: list[str] = []
+        self.fitness: dict = {}
 
     def get_activities(self, start: int, limit: int) -> list[dict]:
         self.calls += 1
@@ -105,6 +111,26 @@ class FakeGarmin:
 
     def get_activity_exercise_sets(self, activity_id: str) -> dict:
         return self._detail("exercise_sets", activity_id, {"exerciseSets": [{"setType": "ACTIVE"}]})
+
+    def _fitness(self, endpoint: str, first: str, last: str):
+        self.fitness_calls.append(f"{endpoint} {first} {last}")
+        payload = self.fitness.get(endpoint, {})
+        if isinstance(payload, Exception):
+            raise payload
+        return payload
+
+    def get_max_metrics_range(self, start: str, end: str):
+        return self._fitness("max_metrics", start, end)
+
+    def get_race_predictions(self, startdate: str, enddate: str, _type: str):
+        assert _type == "daily"
+        return self._fitness("race_predictions", startdate, enddate)
+
+    def get_endurance_score(self, startdate: str, enddate: str):
+        return self._fitness("endurance_score", startdate, enddate)
+
+    def get_hill_score(self, startdate: str, enddate: str):
+        return self._fitness("hill_score", startdate, enddate)
 
     def get_gear(self, profile: str) -> list[dict]:
         self.gear_calls.append("list")
@@ -486,3 +512,82 @@ def test_routes_are_built_for_data_stored_before_routes_existed(auth, monkeypatc
         assert routes.backfill(db) >= 1
         assert db.get(ActivityRoute, 12001).polyline == routes.encode([[45.1, 5.7], [45.2, 5.8]])
         assert routes.backfill(db) == 0  # nothing left to build
+
+
+def test_fitness_history_then_recent_weeks_only(auth, monkeypatch):
+    from app import fitness
+    from app.models import Activity, FitnessSource, FitnessValue
+
+    client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
+    fake = FakeGarmin([])
+    fake.fitness = {
+        "max_metrics": [{"generic": {"calendarDate": "2026-03-01", "vo2MaxPreciseValue": 52.44, "fitnessAge": 31},
+                         "cycling": None}],
+        "race_predictions": [{"calendarDate": "2026-03-01", "time5K": 1260, "time10K": 2640,
+                              "timeHalfMarathon": 5880, "timeMarathon": 12600}],
+        "endurance_score": {"groupMap": {"2026-02-23": {"groupAverage": 6120.4}}},
+        "hill_score": GarminConnectNotFound(),  # this watch has no hill score
+    }
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    with db_module.SessionLocal() as db:
+        db.query(FitnessValue).delete()
+        db.query(FitnessSource).delete()
+        db.commit()
+        first_day = db.scalar(select(func.min(Activity.start_time_local))).date()
+
+        # First sync: the whole history, a year per call.
+        fitness.sync(db, today=first_day + timedelta(days=500))
+        max_calls = [c for c in fake.fitness_calls if c.startswith("max_metrics")]
+        assert max_calls == [
+            f"max_metrics {first_day} {first_day + timedelta(days=363)}",
+            f"max_metrics {first_day + timedelta(days=364)} {first_day + timedelta(days=500)}",
+        ]
+        assert len(fake.fitness_calls) == 8  # 4 sources x 2 chunks, the missing one included
+
+        # Straight after: nothing asked again.
+        fake.fitness_calls.clear()
+        fitness.sync(db, today=first_day + timedelta(days=500))
+        assert fake.fitness_calls == []
+
+        # Hours later: only the last two weeks.
+        for state in db.scalars(select(FitnessSource)):
+            state.fetched_at -= timedelta(hours=7)
+        db.commit()
+        fitness.sync(db, today=first_day + timedelta(days=501))
+        assert f"race_predictions {first_day + timedelta(days=486)} {first_day + timedelta(days=501)}" in fake.fitness_calls
+        assert len(fake.fitness_calls) == 4
+
+        # A failure worth retrying doesn't move that source forward.
+        fake.fitness_calls.clear()
+        fake.fitness["max_metrics"] = RuntimeError("Garmin is down")
+        for state in db.scalars(select(FitnessSource)):
+            state.fetched_at -= timedelta(hours=7)
+        db.commit()
+        fitness.sync(db, today=first_day + timedelta(days=502))
+        assert db.get(FitnessSource, "max_metrics").fetched_through == first_day + timedelta(days=501)
+        assert db.get(FitnessSource, "race_predictions").fetched_through == first_day + timedelta(days=502)
+
+    body = client.get("/api/fitness", headers=auth).json()
+    assert body["checked"] is True
+    assert body["series"]["vo2max_running"] == [["2026-03-01", 52.4]]
+    assert body["series"]["fitness_age"] == [["2026-03-01", 31.0]]
+    assert body["series"]["race_5k"] == [["2026-03-01", 1260.0]]
+    assert body["series"]["endurance_score"] == [["2026-02-23", 6120.0]]
+    assert "hill_score" not in body["series"]
+
+
+def test_fitness_waits_for_the_rate_limit(auth, monkeypatch):
+    from app import fitness
+
+    fake = FakeGarmin([])
+    fake.fitness = {"max_metrics": GarminConnectTooManyRequestsError("slow down")}
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    monkeypatch.setattr(fitness, "SOURCES", {"max_metrics": fitness.SOURCES["max_metrics"]})
+    with db_module.SessionLocal() as db:
+        from app.models import FitnessSource
+
+        db.query(FitnessSource).delete()
+        db.commit()
+        with pytest.raises(GarminConnectTooManyRequestsError):
+            fitness.sync(db)
+        assert db.get(FitnessSource, "max_metrics") is None  # retried in full next time

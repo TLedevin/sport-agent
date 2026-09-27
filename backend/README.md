@@ -31,6 +31,14 @@ uv run python scripts/garmin_login.py --api https://<api-url>    # or omit --api
 
 You type your Garmin email, password and MFA code **on your PC**. Only the resulting session tokens are sent to the API and stored in the database. They refresh automatically on each sync.
 
+## Check the fitness data Garmin returns
+
+```powershell
+uv run python scripts/check_garmin.py --fitness
+```
+
+Prints, for the last 90 days, the start of each raw Garmin answer (VO2 max, race predictions, endurance and hill scores) and the values the app reads from it. Raw data but "0 values read" means Garmin's format differs from what `app/fitness.py` expects.
+
 ## API
 
 | Method | Path | Auth | Purpose |
@@ -41,6 +49,7 @@ You type your Garmin email, password and MFA code **on your PC**. Only the resul
 | GET | `/api/activities?limit&offset` | ✓ | Newest first |
 | GET | `/api/dashboard?today=YYYY-MM-DD` | ✓ | Period totals vs previous period, 12 weekly buckets by sport, yearly breakdown, records |
 | GET | `/api/map` | ✓ | Every activity with a position: simplified route (encoded polyline) or start point |
+| GET | `/api/fitness` | ✓ | VO2 max, fitness age, race predictions, endurance and hill scores over time |
 | POST | `/api/sync` | ✓ | Import new Garmin activities (the Refresh button) |
 | GET | `/api/garmin/status` | ✓ | Connected? last sync? |
 | PUT | `/api/garmin/tokens` | ✓ | Used by `garmin_login.py` |

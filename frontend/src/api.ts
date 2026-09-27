@@ -107,6 +107,25 @@ export type MapActivity = Pick<
   /** Simplified route as an encoded polyline; null until its GPS data has been loaded. */
   route: string | null;
 };
+export type FitnessMetric =
+  | "vo2max_running"
+  | "vo2max_cycling"
+  | "fitness_age"
+  | "race_5k"
+  | "race_10k"
+  | "race_half"
+  | "race_marathon"
+  | "endurance_score"
+  | "hill_score"
+  | "hill_strength"
+  | "hill_endurance";
+/** [date, value] pairs, oldest first. Race predictions are in seconds. */
+export type FitnessPoint = [string, number];
+export type Fitness = {
+  series: Partial<Record<FitnessMetric, FitnessPoint[]>>;
+  /** False until the first sync has asked Garmin (it runs in the background after a sync). */
+  checked: boolean;
+};
 /** [lat, lon] pairs, in recording order. */
 export type Track = { points: [number, number][] };
 export type GarminStatus = { connected: boolean; tokens_updated_at: string | null; last_sync_at: string | null };
@@ -193,6 +212,7 @@ export const api = {
   track: (activityId: number) => request<Track>(`/api/activities/${activityId}/track`),
   gear: () => request<Gear[]>("/api/gear"),
   map: () => request<MapActivity[]>("/api/map"),
+  fitness: () => request<Fitness>("/api/fitness"),
   garminStatus: () => request<GarminStatus>("/api/garmin/status"),
   sync: () => request<SyncResult>("/api/sync", { method: "POST" }),
 };

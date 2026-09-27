@@ -1,11 +1,19 @@
-import { Backpack, LayoutDashboard, List, LogOut, MapIcon, RefreshCw, X } from "lucide-react";
+import { Backpack, LayoutDashboard, List, LogOut, MapIcon, RefreshCw, TrendingUp, X } from "lucide-react";
+import { useEffect, useRef } from "react";
 import Logo from "./Logo";
-import { NavLink, Outlet } from "react-router";
+import { NavLink, Outlet, useLocation } from "react-router";
 import { timeAgo } from "../format";
 import { useSync } from "../sync";
 
 export default function Layout({ onLogout }: { onLogout: () => void }) {
   const { status, syncing, sync, notice, setNotice } = useSync();
+  const nav = useRef<HTMLElement>(null);
+  const { pathname } = useLocation();
+
+  // On a phone the tabs scroll sideways: keep the current one in view.
+  useEffect(() => {
+    nav.current?.querySelector(".nav-link.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [pathname]);
 
   return (
     <div className="shell">
@@ -15,7 +23,7 @@ export default function Layout({ onLogout }: { onLogout: () => void }) {
             <Logo />
             Sport Agent
           </div>
-          <nav className="nav" aria-label="Main">
+          <nav className="nav" aria-label="Main" ref={nav}>
             <NavLink to="/" end className="nav-link">
               <LayoutDashboard size={16} aria-hidden /> Dashboard
             </NavLink>
@@ -24,6 +32,9 @@ export default function Layout({ onLogout }: { onLogout: () => void }) {
             </NavLink>
             <NavLink to="/map" className="nav-link">
               <MapIcon size={16} aria-hidden /> Map
+            </NavLink>
+            <NavLink to="/fitness" className="nav-link">
+              <TrendingUp size={16} aria-hidden /> Fitness
             </NavLink>
             <NavLink to="/equipment" className="nav-link">
               <Backpack size={16} aria-hidden /> Equipment

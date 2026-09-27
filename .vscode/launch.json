@@ -57,6 +57,17 @@
       "preLaunchTask": "backend: prepare"
     },
     {
+      "name": "Check Garmin fitness data",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/scripts/check_garmin.py",
+      "args": ["--limit", "1", "--fitness"],
+      "cwd": "${workspaceFolder}/backend",
+      "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
+      "console": "integratedTerminal",
+      "preLaunchTask": "backend: prepare"
+    },
+    {
       // Same, then stores the tokens in the local database so Refresh in the local app uses real data.
       "name": "Check Garmin connector + connect local app",
       "type": "debugpy",
