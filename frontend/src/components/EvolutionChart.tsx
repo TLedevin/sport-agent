@@ -74,7 +74,7 @@ function roundedTop(x: number, y: number, w: number, h: number, r: number): stri
   return `M${x},${y + h}V${y + rr}Q${x},${y} ${x + rr},${y}H${x + w - rr}Q${x + w},${y} ${x + w},${y + rr}V${y + h}Z`;
 }
 
-function Segmented<T extends string>({ label, options, value, onChange }: {
+export function Segmented<T extends string>({ label, options, value, onChange }: {
   label: string; options: { key: T; short: string; label: string }[]; value: T; onChange: (key: T) => void;
 }) {
   return (
