@@ -8,14 +8,14 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from garminconnect import GarminConnectAuthenticationError, GarminConnectTooManyRequestsError
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import dashboard, garmin
 from .auth import check_password, create_session, require_session
 from .config import get_settings
 from .db import get_db, wake_database
-from .models import Activity, GarminAuth
+from .models import Activity, ActivityGear, GarminAuth, Gear
 from .sports import sport_family
 
 logging.basicConfig(level=logging.INFO)
@@ -154,6 +154,40 @@ def get_dashboard(today: date | None = None, db: Session = Depends(get_db)) -> d
     }
 
 
+def _iso_date(value: datetime | None) -> str | None:
+    return value.date().isoformat() if value else None
+
+
+@app.get("/api/gear", dependencies=authed)
+def list_gear(db: Session = Depends(get_db)) -> list[dict]:
+    """Equipment: active items first, then retired, newest first within each."""
+    last_used = dict(
+        db.execute(
+            select(ActivityGear.gear_uuid, func.max(Activity.start_time_local))
+            .join(Activity, Activity.id == ActivityGear.activity_id)
+            .group_by(ActivityGear.gear_uuid)
+        ).all()
+    )
+    items = sorted(db.scalars(select(Gear)), key=lambda g: g.date_begin or datetime.min, reverse=True)
+    items.sort(key=lambda g: g.status != "active")  # stable: keeps newest first within each group
+    return [
+        {
+            "uuid": g.uuid,
+            "name": g.name,
+            "make_model": g.make_model,
+            "gear_type": g.gear_type,
+            "status": g.status,
+            "date_begin": _iso_date(g.date_begin),
+            "date_end": _iso_date(g.date_end),
+            "maximum_distance": g.maximum_distance,
+            "total_distance": g.total_distance,
+            "total_activities": g.total_activities,
+            "last_used": _iso_date(last_used.get(g.uuid)),
+        }
+        for g in items
+    ]
+
+
 @app.get("/api/garmin/status", dependencies=authed)
 def garmin_status(db: Session = Depends(get_db)) -> dict:
     auth = db.get(GarminAuth, 1)
@@ -182,8 +216,12 @@ def put_garmin_tokens(body: TokensRequest, db: Session = Depends(get_db)) -> dic
 def sync(db: Session = Depends(get_db)) -> dict:
     try:
         with _garmin_errors():
-            imported = garmin.sync(db)
+            result = garmin.sync(db)
     except garmin.SyncInProgress:
         raise HTTPException(409, "sync_in_progress")
     auth = db.get(GarminAuth, 1)
-    return {"imported": imported, "last_sync_at": _iso_utc(auth.last_sync_at) if auth else None}
+    return {
+        "imported": result.imported,
+        "gear_changed": result.gear_changed,
+        "last_sync_at": _iso_utc(auth.last_sync_at) if auth else None,
+    }

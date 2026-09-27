@@ -18,6 +18,7 @@
   --warning-border: #ecd08b;
   --error-bg: #fce9e8;
   --error-border: #eeb0ae;
+  --danger-text: #c0342e;
 
   /* Sport colors: validated categorical palette, slots 1-6 in this order. */
   --sport-running: #2a78d6;
@@ -54,6 +55,7 @@
     --warning-border: #6e5717;
     --error-bg: #351817;
     --error-border: #7a2f2d;
+    --danger-text: #f0706a;
 
     --sport-running: #3987e5;
     --sport-cycling: #d95926;
@@ -915,6 +917,128 @@ input:focus-visible {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ---------- Equipment ---------- */
+
+.section-title {
+  font-size: 1.02rem;
+  font-weight: 650;
+  margin: 0 0 12px;
+}
+
+.gear-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+}
+
+.gear-card.retired {
+  opacity: 0.75;
+}
+
+.gear-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.gear-icon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+}
+
+.gear-title {
+  min-width: 0;
+}
+
+.gear-title h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.gear-distance {
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.gear-distance span {
+  font-size: 0.95rem;
+  font-weight: 550;
+  color: var(--text-muted);
+}
+
+.gear-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  margin: 8px 0 6px;
+  overflow: hidden;
+}
+
+.gear-bar > div {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--sport-running);
+}
+
+.gear-bar.near > div {
+  background: var(--sport-walking);
+}
+
+.gear-bar.over > div {
+  background: var(--danger-text);
+}
+
+.gear-bar.retired > div {
+  background: var(--baseline);
+}
+
+.gear-wear-text {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.gear-wear-text.over {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+/* Wraps rather than overflowing when a card is narrow and the dates carry a year. */
+.gear-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--gridline);
+}
+
+.gear-facts dt {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.gear-facts dd {
+  margin: 1px 0 0;
+  font-weight: 600;
+  font-size: 0.92rem;
+  white-space: nowrap;
 }
 
 /* ---------- Tables ---------- */

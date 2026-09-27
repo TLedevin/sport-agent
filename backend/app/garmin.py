@@ -4,12 +4,13 @@ import json
 import logging
 import threading
 from datetime import UTC, datetime
+from typing import NamedTuple
 
 from garminconnect import Garmin
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from .models import Activity, ActivityTrack, GarminAuth
+from .models import Activity, ActivityGear, ActivityTrack, GarminAuth, Gear
 
 log = logging.getLogger(__name__)
 
@@ -26,12 +27,22 @@ class SyncInProgress(Exception):
     pass
 
 
+class SyncResult(NamedTuple):
+    imported: int  # new activities
+    gear_changed: bool
+
+
 def _utcnow() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _parse_time(value: str) -> datetime:
     return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+
+
+def _parse_gear_date(value: str | None) -> datetime | None:
+    # Garmin gear dates look like "2018-08-19T22:00:00.0"
+    return datetime.fromisoformat(value.split(".")[0]) if value else None
 
 
 def save_tokens(db: Session, tokens: str) -> None:
@@ -74,8 +85,8 @@ def to_activity(data: dict) -> Activity:
     )
 
 
-def sync(db: Session, client: Garmin | None = None) -> int:
-    """Import activities newer than the ones already stored. Returns how many were new.
+def sync(db: Session, client: Garmin | None = None) -> SyncResult:
+    """Import activities newer than the ones already stored, then refresh the gear.
 
     Garmin lists activities newest first, so paging stops at the first page that
     contains an activity we already have. The first sync imports the full history.
@@ -106,9 +117,78 @@ def sync(db: Session, client: Garmin | None = None) -> int:
             auth.last_sync_at = _utcnow()
             db.commit()
         log.info("Garmin sync imported %d new activities", imported)
-        return imported
+
+        # Activities are already saved: a gear failure must not undo or hide them.
+        try:
+            gear_changed = sync_gear(db, client)
+        except Exception:
+            db.rollback()
+            log.exception("Gear sync failed; it will be retried on the next sync")
+            gear_changed = False
+        return SyncResult(imported, gear_changed)
     finally:
         _sync_lock.release()
+
+
+def _gear_state(gear: Gear) -> tuple:
+    return (
+        gear.name, gear.make_model, gear.status, gear.date_begin, gear.date_end,
+        gear.maximum_distance, gear.total_distance, gear.total_activities,
+    )
+
+
+def sync_gear(db: Session, client: Garmin) -> bool:
+    """Mirror Garmin's gear list, its usage totals and which activities used each item.
+    Returns True when anything changed.
+
+    Calls are kept low: totals are re-read for active gear (and for retired gear only when
+    Garmin reports an edit), and an item's activity list only when its totals moved.
+    """
+    if client.profile_id is None:
+        log.warning("Garmin profile id unknown: skipping gear sync")
+        return False
+
+    stored = {g.uuid: g for g in db.scalars(select(Gear))}
+    changed = False
+    for item in client.get_gear(str(client.profile_id)):
+        uuid = item["uuid"]
+        gear = stored.pop(uuid, None)
+        is_new = gear is None
+        if gear is None:
+            gear = Gear(uuid=uuid, total_distance=0.0, total_activities=0, raw={})
+            db.add(gear)
+        before = None if is_new else _gear_state(gear)
+        edited = gear.raw.get("updateDate") != item.get("updateDate")
+
+        # Fields from the list first: the queries below flush the row, so it must be complete.
+        make_model = item.get("customMakeModel") or None
+        gear.name = (item.get("displayName") or make_model or item.get("gearModelName") or "Unnamed")[:255]
+        gear.make_model = make_model[:255] if make_model else None
+        gear.gear_type = item.get("gearTypeName") or "Other"
+        gear.status = item.get("gearStatusName") or "active"
+        gear.date_begin = _parse_gear_date(item.get("dateBegin"))
+        gear.date_end = _parse_gear_date(item.get("dateEnd"))
+        gear.maximum_distance = item.get("maximumMeters") or None
+        gear.raw = item
+
+        if is_new or edited or gear.status == "active":
+            stats = client.get_gear_stats(uuid)
+            distance = stats.get("totalDistance") or 0.0
+            count = stats.get("totalActivities") or 0
+            if is_new or (distance, count) != (gear.total_distance, gear.total_activities):
+                used = {a["activityId"] for a in client.get_gear_activities(uuid)}
+                db.execute(delete(ActivityGear).where(ActivityGear.gear_uuid == uuid))
+                db.add_all(ActivityGear(activity_id=a, gear_uuid=uuid) for a in used)
+            gear.total_distance, gear.total_activities = distance, count
+
+        changed = changed or is_new or _gear_state(gear) != before
+
+    for gone in stored.values():  # deleted in Garmin Connect
+        db.execute(delete(ActivityGear).where(ActivityGear.gear_uuid == gone.uuid))
+        db.delete(gone)
+        changed = True
+    db.commit()
+    return changed
 
 
 def track(db: Session, activity: Activity, client: Garmin | None = None) -> list[list[float]]:

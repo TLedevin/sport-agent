@@ -62,7 +62,21 @@ export type Dashboard = {
 /** [lat, lon] pairs, in recording order. */
 export type Track = { points: [number, number][] };
 export type GarminStatus = { connected: boolean; tokens_updated_at: string | null; last_sync_at: string | null };
-export type SyncResult = { imported: number; last_sync_at: string | null };
+export type SyncResult = { imported: number; gear_changed: boolean; last_sync_at: string | null };
+export type Gear = {
+  uuid: string;
+  name: string;
+  make_model: string | null;
+  gear_type: string;
+  status: "active" | "retired";
+  date_begin: string | null;
+  date_end: string | null;
+  /** Meters: the replacement target set in Garmin Connect. */
+  maximum_distance: number | null;
+  total_distance: number;
+  total_activities: number;
+  last_used: string | null;
+};
 
 export class ApiError extends Error {
   constructor(
@@ -124,6 +138,7 @@ export const api = {
   activities: (limit: number, offset: number) =>
     request<Activity[]>(`/api/activities?limit=${limit}&offset=${offset}`),
   track: (activityId: number) => request<Track>(`/api/activities/${activityId}/track`),
+  gear: () => request<Gear[]>("/api/gear"),
   garminStatus: () => request<GarminStatus>("/api/garmin/status"),
   sync: () => request<SyncResult>("/api/sync", { method: "POST" }),
 };

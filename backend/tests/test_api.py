@@ -48,10 +48,14 @@ class FakeTokenClient:
 class FakeGarmin:
     """Newest first, like Garmin."""
 
-    def __init__(self, activities: list[dict]):
+    def __init__(self, activities: list[dict], gear: list[dict] | None = None):
         self.activities = activities
         self.client = FakeTokenClient()
+        self.profile_id = 42
         self.calls = 0
+        # gear: Garmin's list payload plus "stats" and "activity_ids" used by the fake endpoints
+        self.gear = gear or []
+        self.gear_calls: list[str] = []
 
     def get_activities(self, start: int, limit: int) -> list[dict]:
         self.calls += 1
@@ -60,6 +64,18 @@ class FakeGarmin:
     def get_activity_details(self, activity_id: str, maxchart: int, maxpoly: int) -> dict:
         self.calls += 1
         return {"geoPolylineDTO": {"polyline": [{"lat": 48.9, "lon": 2.1}, {"lat": 48.91, "lon": None}]}}
+
+    def get_gear(self, profile: str) -> list[dict]:
+        self.gear_calls.append("list")
+        return [{k: v for k, v in g.items() if k not in ("stats", "activity_ids")} for g in self.gear]
+
+    def get_gear_stats(self, uuid: str) -> dict:
+        self.gear_calls.append(f"stats {uuid}")
+        return next(g["stats"] for g in self.gear if g["uuid"] == uuid)
+
+    def get_gear_activities(self, uuid: str) -> list[dict]:
+        self.gear_calls.append(f"activities {uuid}")
+        return [{"activityId": a} for g in self.gear if g["uuid"] == uuid for a in g["activity_ids"]]
 
 
 @pytest.fixture
@@ -146,3 +162,83 @@ def test_track_is_fetched_once_then_stored(auth, monkeypatch):
     assert fake.calls == 1  # no GPS: Garmin isn't called
 
     assert client.get("/api/activities/999/track", headers=auth).status_code == 404
+
+
+def shoe(uuid: str, name: str, status: str, begin: str, distance: float, ids: list[int], updated: int = 1) -> dict:
+    return {
+        "uuid": uuid,
+        "displayName": name,
+        "customMakeModel": f"{name} model",
+        "gearTypeName": "Shoes",
+        "gearStatusName": status,
+        "dateBegin": f"{begin}T00:00:00.0",
+        "dateEnd": "2026-01-05T10:00:00.0" if status == "retired" else None,
+        "maximumMeters": 800000.0,
+        "updateDate": updated,
+        "stats": {"totalDistance": distance, "totalActivities": len(ids)},
+        "activity_ids": ids,
+    }
+
+
+def test_gear_is_loaded_then_refreshed_cheaply(auth, monkeypatch):
+    client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
+    runs = [activity(3001, "Run 1"), activity(3000, "Run 0")]
+    old = shoe("old", "Old pair", "retired", "2024-01-01", 700000.0, [3000])
+    new = shoe("new", "New pair", "active", "2025-06-01", 10000.0, [3001])
+    fake = FakeGarmin(runs, gear=[old, new])
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+
+    # First sync loads every item, its totals and its activities.
+    r = client.post("/api/sync", headers=auth).json()
+    assert r["gear_changed"] is True
+    assert sorted(fake.gear_calls) == sorted(
+        ["list", "stats old", "activities old", "stats new", "activities new"]
+    )
+
+    gear = client.get("/api/gear", headers=auth).json()
+    assert [g["name"] for g in gear] == ["New pair", "Old pair"]  # active first
+    assert gear[0] | {} == {
+        **gear[0],
+        "make_model": "New pair model",
+        "status": "active",
+        "date_begin": "2025-06-01",
+        "maximum_distance": 800000.0,
+        "total_distance": 10000.0,
+        "total_activities": 1,
+        "last_used": "2026-05-06",  # Run 1's local date
+    }
+    assert gear[1]["date_end"] == "2026-01-05"
+
+    # Nothing moved: only the list and the active item's totals are read.
+    fake.gear_calls.clear()
+    assert client.post("/api/sync", headers=auth).json()["gear_changed"] is False
+    assert fake.gear_calls == ["list", "stats new"]
+
+    # A new run in the new pair: its activity list is re-read.
+    fake.activities.insert(0, activity(3002, "Run 2"))
+    new["stats"] = {"totalDistance": 20000.0, "totalActivities": 2}
+    new["activity_ids"] = [3001, 3002]
+    fake.gear_calls.clear()
+    assert client.post("/api/sync", headers=auth).json()["gear_changed"] is True
+    assert fake.gear_calls == ["list", "stats new", "activities new"]
+    assert client.get("/api/gear", headers=auth).json()[0]["total_distance"] == 20000.0
+
+    # Deleted in Garmin Connect: gone here too.
+    fake.gear = [new]
+    assert client.post("/api/sync", headers=auth).json()["gear_changed"] is True
+    assert [g["name"] for g in client.get("/api/gear", headers=auth).json()] == ["New pair"]
+
+
+def test_gear_failure_does_not_break_activity_sync(auth, monkeypatch):
+    client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
+    fake = FakeGarmin([activity(4000, "Run")])
+
+    def broken(profile):
+        raise RuntimeError("gear endpoint down")
+
+    fake.get_gear = broken
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    r = client.post("/api/sync", headers=auth)
+    assert r.status_code == 200
+    assert r.json()["imported"] == 1
+    assert r.json()["gear_changed"] is False

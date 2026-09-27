@@ -50,10 +50,11 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   const runSync = useCallback(async (automatic: boolean) => {
     setSyncing(true);
     try {
-      const { imported, last_sync_at } = await api.sync();
+      const { imported, gear_changed, last_sync_at } = await api.sync();
       setStatus((s) => (s ? { ...s, last_sync_at } : s));
+      // Pages refetch on a version bump: new activities, or gear that changed on its own.
+      if (imported > 0 || gear_changed) setVersion((v) => v + 1);
       if (imported > 0) {
-        setVersion((v) => v + 1);
         setNotice({ kind: "info", content: `Imported ${imported} new ${imported === 1 ? "activity" : "activities"}.` });
       } else if (!automatic) {
         setNotice({ kind: "info", content: "Already up to date." });
