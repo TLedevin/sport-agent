@@ -26,6 +26,58 @@ class Activity(Base):
     raw: Mapped[dict] = mapped_column(JSON)  # full Garmin payload, for future features
 
 
+class ActivityTrack(Base):
+    """GPS track, fetched from Garmin the first time an activity's map is shown.
+
+    A separate table rather than a column: create_all adds new tables but never
+    alters existing ones, so this needs no migration on Azure SQL.
+    """
+
+    __tablename__ = "activity_tracks"
+
+    activity_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    points: Mapped[list] = mapped_column(JSON)  # [[lat, lon], ...], empty when there's no GPS
+    fetched_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class ActivityDetail(Base):
+    """Everything Garmin has beyond the summary: time series, laps, weather, zones...
+    Fetched once (on first view, or by the post-sync backfill), then served from here."""
+
+    __tablename__ = "activity_details"
+
+    activity_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    data: Mapped[dict] = mapped_column(JSON)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class Gear(Base):
+    """Equipment from Garmin Connect (shoes, bikes...), with Garmin's own usage totals."""
+
+    __tablename__ = "gear"
+
+    uuid: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(Unicode(255))  # your name for it, else the model
+    make_model: Mapped[str | None] = mapped_column(Unicode(255))
+    gear_type: Mapped[str] = mapped_column(String(32))  # e.g. Shoes, Bike
+    status: Mapped[str] = mapped_column(String(16))  # active or retired
+    date_begin: Mapped[datetime | None] = mapped_column(DateTime)
+    date_end: Mapped[datetime | None] = mapped_column(DateTime)  # when retired
+    maximum_distance: Mapped[float | None] = mapped_column(Float)  # meters, the replacement target
+    total_distance: Mapped[float] = mapped_column(Float, default=0)  # meters
+    total_activities: Mapped[int] = mapped_column(Integer, default=0)
+    raw: Mapped[dict] = mapped_column(JSON)  # Garmin's gear payload
+
+
+class ActivityGear(Base):
+    """Which gear each activity used (an activity can use several, e.g. bike + shoes)."""
+
+    __tablename__ = "activity_gear"
+
+    activity_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    gear_uuid: Mapped[str] = mapped_column(String(64), primary_key=True, index=True)
+
+
 class GarminAuth(Base):
     """Single row (id=1) holding the Garmin session tokens."""
 

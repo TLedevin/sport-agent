@@ -18,6 +18,7 @@
   --warning-border: #ecd08b;
   --error-bg: #fce9e8;
   --error-border: #eeb0ae;
+  --danger-text: #c0342e;
 
   /* Sport colors: validated categorical palette, slots 1-6 in this order. */
   --sport-running: #2a78d6;
@@ -54,6 +55,7 @@
     --warning-border: #6e5717;
     --error-bg: #351817;
     --error-border: #7a2f2d;
+    --danger-text: #f0706a;
 
     --sport-running: #3987e5;
     --sport-cycling: #d95926;
@@ -209,10 +211,8 @@ input:focus-visible {
 }
 
 .brand-mark {
-  width: 22px;
-  height: 22px;
-  border-radius: 7px;
-  background: linear-gradient(135deg, var(--sport-running), var(--sport-swimming));
+  flex: none;
+  display: block;
 }
 
 .nav {
@@ -416,6 +416,57 @@ input:focus-visible {
   color: color-mix(in srgb, var(--badge-color) 72%, var(--text-primary));
 }
 
+/* ---------- Dashboard: sport filter ---------- */
+
+.sport-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: -4px;
+}
+
+/* Fixed size: selecting a sport never shifts the row. */
+.sport-filter-option {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.sport-filter-option:hover {
+  color: color-mix(in srgb, var(--badge-color) 72%, var(--text-primary));
+  border-color: color-mix(in srgb, var(--badge-color) 40%, transparent);
+}
+
+.sport-filter-option.active {
+  /* A light tint over the card surface (opaque, so it never darkens with the page behind). */
+  background: color-mix(in srgb, var(--badge-color) 9%, var(--surface));
+  border-color: color-mix(in srgb, var(--badge-color) 55%, transparent);
+  /* Same recipe as .sport-badge: legible on both themes. */
+  color: color-mix(in srgb, var(--badge-color) 72%, var(--text-primary));
+}
+
+/* The selected sport in words, so the choice never relies on colour alone. */
+.sport-filter-label {
+  margin-left: 4px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.sport-filter-option:focus-visible {
+  outline: 2px solid var(--badge-color);
+  outline-offset: 2px;
+}
+
 /* ---------- Dashboard: tiles ---------- */
 
 .tiles {
@@ -486,6 +537,102 @@ input:focus-visible {
   }
 }
 
+/* ---------- Activity card ---------- */
+
+.activity-card.with-map {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 20px;
+}
+
+.activity-card-eyebrow {
+  margin: 0 0 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.activity-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.activity-card-title {
+  min-width: 0;
+}
+
+.activity-card-title h2 {
+  font-size: 1.2rem;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.activity-card-place {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 8px;
+}
+
+.activity-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 14px 16px;
+  margin: 0;
+}
+
+.activity-stats dt {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.activity-stats dd {
+  margin: 1px 0 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-map {
+  height: 100%;
+  min-height: 260px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface-2);
+  /* Keep Leaflet's own stacking below the app's sticky header. */
+  isolation: isolate;
+  z-index: 0;
+}
+
+.activity-map.placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.activity-map .leaflet-control-attribution {
+  font-size: 0.65rem;
+}
+
+/* Fallback OpenStreetMap tiles have no dark style: invert them, keeping hues roughly right. */
+@media (prefers-color-scheme: dark) {
+  .activity-map.osm .leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9) saturate(0.6);
+  }
+}
+
+@media (max-width: 860px) {
+  .activity-card.with-map {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* ---------- Dashboard: chart ---------- */
 
 .dash-row {
@@ -498,6 +645,64 @@ input:focus-visible {
   .dash-row {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin: -4px 0 14px;
+}
+
+.chart-controls-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.segmented button {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.segmented button:hover {
+  color: var(--text-primary);
+}
+
+.segmented button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+/* The card surface is darker than the track in dark mode: lift the selected option instead. */
+@media (prefers-color-scheme: dark) {
+  .segmented button[aria-pressed="true"] {
+    background: var(--baseline);
+  }
+}
+
+.segmented button:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 1px;
 }
 
 .legend {
@@ -714,6 +919,574 @@ input:focus-visible {
   text-overflow: ellipsis;
 }
 
+/* ---------- Equipment ---------- */
+
+.section-title {
+  font-size: 1.02rem;
+  font-weight: 650;
+  margin: 0 0 12px;
+}
+
+.gear-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+}
+
+.gear-card.retired {
+  opacity: 0.75;
+}
+
+.gear-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.gear-icon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+}
+
+.gear-title {
+  min-width: 0;
+}
+
+.gear-title h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.gear-distance {
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.gear-distance span {
+  font-size: 0.95rem;
+  font-weight: 550;
+  color: var(--text-muted);
+}
+
+.gear-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  margin: 8px 0 6px;
+  overflow: hidden;
+}
+
+.gear-bar > div {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--sport-running);
+}
+
+.gear-bar.near > div {
+  background: var(--sport-walking);
+}
+
+.gear-bar.over > div {
+  background: var(--danger-text);
+}
+
+.gear-bar.retired > div {
+  background: var(--baseline);
+}
+
+.gear-wear-text {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.gear-wear-text.over {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+/* Wraps rather than overflowing when a card is narrow and the dates carry a year. */
+.gear-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--gridline);
+}
+
+.gear-facts dt {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.gear-facts dd {
+  margin: 1px 0 0;
+  font-weight: 600;
+  font-size: 0.92rem;
+  white-space: nowrap;
+}
+
+/* ---------- Activity page ---------- */
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 550;
+  text-decoration: none;
+  margin-bottom: -8px;
+}
+
+.back-link:hover {
+  color: var(--text-primary);
+}
+
+.detail-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.detail-head-body {
+  min-width: 0;
+  flex: 1;
+}
+
+/* Headline numbers as small cards in a row under the title (wrapping on narrow screens). */
+.detail-overview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0 0;
+}
+
+.detail-overview > div {
+  min-width: 118px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.detail-overview dt {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.detail-overview dd {
+  margin: 1px 0 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.detail-head h1 {
+  font-size: 1.6rem;
+  overflow-wrap: anywhere;
+}
+
+/* Subtitle beside the title; it drops below when the title is long or the screen narrow. */
+.detail-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+}
+
+.detail-title .page-sub {
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .detail-title {
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+.detail-place {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 8px;
+}
+
+.detail-gear {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 0;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.chip:hover {
+  color: var(--text-primary);
+}
+
+.detail-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 16px;
+}
+
+/* A faded graph along the bottom of the card, behind its numbers. */
+/* The curve lives in a band below the numbers: the padding keeps them from overlapping. */
+.detail-group.has-sparkline {
+  position: relative;
+  overflow: hidden;
+  padding-bottom: 68px;
+}
+
+.detail-group > :not(.card-sparkline, .card-deco) {
+  position: relative;
+}
+
+.card-sparkline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 64px;
+  pointer-events: none;
+}
+
+/* Cards without a graph: a large faded icon in the corner and a soft glow of the same colour. */
+.detail-group.has-deco {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--deco-color) 14%, transparent), transparent 55%),
+    var(--surface);
+}
+
+.card-deco {
+  position: absolute;
+  right: -18px;
+  bottom: -22px;
+  width: 124px;
+  height: 124px;
+  color: var(--deco-color);
+  opacity: 0.16;
+  transform: rotate(-12deg);
+  pointer-events: none;
+}
+
+.detail-group h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+  font-weight: 650;
+  margin-bottom: 12px;
+}
+
+.detail-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 12px 16px;
+  margin: 0;
+}
+
+.detail-stats dt {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.detail-stats dd {
+  margin: 1px 0 0;
+  font-size: 1.05rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.detail-loading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--text-secondary);
+}
+
+.detail-loading p {
+  margin: 0;
+}
+
+/* Map beside the graphs on wide screens; the graphs scroll inside a box as tall as the map. */
+.map-graphs {
+  --map-graphs-height: 420px;
+}
+
+.map-graphs.both {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+  gap: 20px;
+}
+
+.map-graphs-map {
+  height: var(--map-graphs-height);
+}
+
+@media (max-width: 1000px) {
+  .map-graphs.both {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .map-graphs-map {
+    height: 320px;
+  }
+}
+
+.activity-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  max-height: var(--map-graphs-height);
+  overflow-y: auto;
+  overscroll-behavior: contain; /* reaching the end doesn't start scrolling the page */
+  padding-right: 8px;
+  touch-action: pan-y;
+  scrollbar-width: thin;
+  scrollbar-color: var(--baseline) transparent;
+}
+
+.activity-chart svg {
+  display: block;
+  overflow: visible;
+  cursor: crosshair;
+}
+
+.activity-chart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 0.82rem;
+}
+
+.activity-chart-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+}
+
+.activity-chart-value {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cursor-line {
+  stroke: var(--text-primary);
+  stroke-opacity: 0.35;
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.cursor-dot {
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.zones {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.zones li {
+  display: grid;
+  grid-template-columns: 58px 96px minmax(0, 1fr) 64px 40px;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.85rem;
+}
+
+.zone-name {
+  font-weight: 600;
+}
+
+.zone-bar {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.zone-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+}
+
+.zone-time {
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.zone-share {
+  text-align: right;
+}
+
+@media (max-width: 560px) {
+  .zones li {
+    grid-template-columns: 52px minmax(0, 1fr) 56px 34px;
+  }
+
+  .zone-range {
+    display: none;
+  }
+}
+
+/* ---------- Activities: filters and sorting ---------- */
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px 28px;
+  padding: 16px 20px;
+}
+
+.filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 10px;
+}
+
+.filter-title {
+  flex-basis: 100%;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.filters input {
+  font: inherit;
+  font-size: 0.9rem;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--page);
+  color: var(--text-primary);
+  color-scheme: inherit;
+}
+
+.filters .sport-filter {
+  margin-bottom: 0;
+}
+
+.filters input[type="number"] {
+  width: 96px;
+}
+
+.filter-summary {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+  font-size: 0.88rem;
+}
+
+@media (max-width: 720px) {
+  .filter-summary {
+    margin-left: 0;
+    flex-basis: 100%;
+    justify-content: space-between;
+  }
+
+  .filters input[type="date"] {
+    width: 148px;
+  }
+}
+
+.refetching-card {
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+/* Headers are buttons: sorting works with the keyboard, and the arrow shows the direction. */
+.sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sort-button svg {
+  opacity: 0.45;
+}
+
+.sort-button:hover,
+.sort-button.active {
+  color: var(--text-primary);
+}
+
+.sort-button.active svg {
+  opacity: 1;
+}
+
+.sort-button:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 /* ---------- Tables ---------- */
 
 .table-scroll {
@@ -778,7 +1551,29 @@ input:focus-visible {
 }
 
 .activity-name {
+  display: block;
   font-weight: 600;
+  color: inherit;
+  text-decoration: none;
+}
+
+.row-link {
+  cursor: pointer;
+}
+
+.row-link:hover .activity-name,
+.activity-name:focus-visible {
+  text-decoration: underline;
+}
+
+.title-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.title-link:hover,
+.title-link:focus-visible {
+  text-decoration: underline;
 }
 
 .activity-sport {

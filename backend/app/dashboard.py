@@ -6,7 +6,6 @@ from datetime import date, datetime, timedelta
 
 from .sports import FAMILIES, sport_family
 
-WEEKS = 12
 FASTEST_RUN_MIN_DISTANCE = 5000  # meters
 
 
@@ -67,18 +66,77 @@ def periods(rows: list[Row], today: date) -> dict:
     }
 
 
-def weekly(rows: list[Row], today: date) -> list[dict]:
-    this_monday = today - timedelta(days=today.weekday())
-    starts = [this_monday - timedelta(weeks=i) for i in range(WEEKS - 1, -1, -1)]
-    buckets = {start: defaultdict(float) for start in starts}
+def periods_by_family(rows: list[Row], today: date) -> dict:
+    """The same periods per sport family, for families active since 1 January last year
+    (the widest comparison window): any other family would only show zeros."""
+    active = {r.family for r in _between(rows, date(today.year - 1, 1, 1), today)}
+    return {
+        family: periods([r for r in rows if r.family == family], today) for family in FAMILIES if family in active
+    }
+
+
+def _week_start(day: date) -> date:
+    return day - timedelta(days=day.weekday())
+
+
+def _month_start(day: date) -> date:
+    return day.replace(day=1)
+
+
+def _months_back(month: date, n: int) -> date:
+    index = month.year * 12 + month.month - 1 - n
+    return date(index // 12, index % 12 + 1, 1)
+
+
+def _series(rows: list[Row], starts: list[date], bucket_of) -> list[dict]:
+    time: dict[date, dict[str, float]] = {start: defaultdict(float) for start in starts}
+    distance: dict[date, dict[str, float]] = {start: defaultdict(float) for start in starts}
     for r in rows:
-        monday = r.start.date() - timedelta(days=r.start.weekday())
-        if monday in buckets:
-            buckets[monday][r.family] += r.time
+        key = bucket_of(r.start.date())
+        if key in time:
+            time[key][r.family] += r.time
+            distance[key][r.family] += r.distance
     return [
-        {"week_start": start.isoformat(), "duration_by_family": {f: buckets[start].get(f, 0.0) for f in FAMILIES}}
+        {
+            "start": start.isoformat(),
+            "duration_by_family": {f: time[start].get(f, 0.0) for f in FAMILIES},
+            "distance_by_family": {f: distance[start].get(f, 0.0) for f in FAMILIES},
+        }
         for start in starts
     ]
+
+
+def evolution(rows: list[Row], today: date) -> dict:
+    """Training per sport over time for each range of the Evolution chart: one series per
+    granularity the range offers, the default first. Buckets are oldest first, and each covers
+    a whole calendar unit (the current one still in progress)."""
+    this_week, this_month = _week_start(today), _month_start(today)
+    first = min(r.start.date() for r in rows) if rows else today
+    all_months = (this_month.year - first.year) * 12 + this_month.month - first.month + 1
+
+    def days(n: int) -> dict:
+        starts = [today - timedelta(days=i) for i in range(n - 1, -1, -1)]
+        return {"unit": "day", "buckets": _series(rows, starts, lambda d: d)}
+
+    def weeks(n: int) -> dict:
+        starts = [this_week - timedelta(weeks=i) for i in range(n - 1, -1, -1)]
+        return {"unit": "week", "buckets": _series(rows, starts, _week_start)}
+
+    def months(n: int) -> dict:
+        starts = [_months_back(this_month, i) for i in range(n - 1, -1, -1)]
+        return {"unit": "month", "buckets": _series(rows, starts, _month_start)}
+
+    def years() -> dict:
+        starts = [date(y, 1, 1) for y in range(first.year, today.year + 1)]
+        return {"unit": "year", "buckets": _series(rows, starts, lambda d: date(d.year, 1, 1))}
+
+    return {
+        "1m": [days(30), weeks(5)],
+        "3m": [weeks(13), months(3)],
+        "6m": [weeks(26), months(6)],
+        "1y": [months(12)],  # a yearly view of one year would be one or two bars
+        "all": [months(all_months), years()],
+    }
 
 
 def breakdown(rows: list[Row], today: date) -> list[dict]:
@@ -125,7 +183,8 @@ def build(rows: list[Row], today: date) -> dict:
     return {
         "today": today.isoformat(),
         "periods": periods(rows, today),
-        "weekly": weekly(rows, today),
+        "periods_by_family": periods_by_family(rows, today),
+        "evolution": evolution(rows, today),
         "breakdown": breakdown(rows, today),
         "records": records(rows),
     }

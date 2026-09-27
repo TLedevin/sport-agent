@@ -1,4 +1,5 @@
-import { LayoutDashboard, List, LogOut, RefreshCw, X } from "lucide-react";
+import { Backpack, LayoutDashboard, List, LogOut, RefreshCw, X } from "lucide-react";
+import Logo from "./Logo";
 import { NavLink, Outlet } from "react-router";
 import { timeAgo } from "../format";
 import { useSync } from "../sync";
@@ -11,7 +12,7 @@ export default function Layout({ onLogout }: { onLogout: () => void }) {
       <header className="header">
         <div className="header-inner">
           <div className="brand">
-            <span className="brand-mark" aria-hidden />
+            <Logo />
             Sport Agent
           </div>
           <nav className="nav" aria-label="Main">
@@ -20,6 +21,9 @@ export default function Layout({ onLogout }: { onLogout: () => void }) {
             </NavLink>
             <NavLink to="/activities" className="nav-link">
               <List size={16} aria-hidden /> Activities
+            </NavLink>
+            <NavLink to="/equipment" className="nav-link">
+              <Backpack size={16} aria-hidden /> Equipment
             </NavLink>
           </nav>
           <div className="header-actions">

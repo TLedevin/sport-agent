@@ -4,7 +4,9 @@ import { api, getToken, SESSION_EXPIRED_EVENT, setToken } from "./api";
 import Layout from "./components/Layout";
 import Login from "./Login";
 import ActivitiesPage from "./pages/ActivitiesPage";
+import ActivityDetailPage from "./pages/ActivityDetailPage";
 import DashboardPage from "./pages/DashboardPage";
+import EquipmentPage from "./pages/EquipmentPage";
 import { SyncProvider } from "./sync";
 
 export default function App() {
@@ -35,6 +37,8 @@ export default function App() {
         <Route element={<Layout onLogout={() => handleToken(null)} />}>
           <Route index element={<DashboardPage />} />
           <Route path="activities" element={<ActivitiesPage />} />
+          <Route path="activities/:id" element={<ActivityDetailPage />} />
+          <Route path="equipment" element={<EquipmentPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

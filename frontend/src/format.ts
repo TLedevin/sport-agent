@@ -39,6 +39,16 @@ export function paceOrSpeed(sportType: string, speed: number | null): string {
   return `${(speed * 3.6).toFixed(1)} km/h`;
 }
 
+/** The name for what paceOrSpeed shows. */
+export function paceOrSpeedLabel(sportType: string): string {
+  if (sportType.includes("swim") || PACE_SPORTS.some((s) => sportType.includes(s))) return "Pace";
+  return "Speed";
+}
+
+export function calories(kcal: number): string {
+  return `${Math.round(kcal).toLocaleString("en")} kcal`;
+}
+
 export function activityDate(localIso: string): string {
   // start_time_local is already the athlete's local wall-clock time: format it as-is.
   const date = new Date(localIso);
