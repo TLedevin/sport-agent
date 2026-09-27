@@ -56,14 +56,55 @@ class FakeGarmin:
         # gear: Garmin's list payload plus "stats" and "activity_ids" used by the fake endpoints
         self.gear = gear or []
         self.gear_calls: list[str] = []
+        # per-activity endpoints: "<endpoint> <activity id>" for each call, and optional
+        # replacements (endpoint -> function) to simulate missing data or failures
+        self.detail_calls: list[str] = []
+        self.detail_overrides: dict = {}
 
     def get_activities(self, start: int, limit: int) -> list[dict]:
         self.calls += 1
         return self.activities[start : start + limit]
 
+    def _detail(self, endpoint: str, activity_id: str, default):
+        self.detail_calls.append(f"{endpoint} {activity_id}")
+        override = self.detail_overrides.get(endpoint)
+        return override() if override else default
+
     def get_activity_details(self, activity_id: str, maxchart: int, maxpoly: int) -> dict:
-        self.calls += 1
-        return {"geoPolylineDTO": {"polyline": [{"lat": 48.9, "lon": 2.1}, {"lat": 48.91, "lon": None}]}}
+        # maxpoly > 0: the map's track request; 0: the time series for the activity page
+        return self._detail("track" if maxpoly else "series", activity_id, {
+            "geoPolylineDTO": {"polyline": [{"lat": 48.9, "lon": 2.1}, {"lat": 48.91, "lon": None}]},
+            "metricDescriptors": [
+                {"metricsIndex": 0, "key": "sumDistance", "unit": {"key": "meter"}},
+                {"metricsIndex": 1, "key": "directHeartRate", "unit": {"key": "bpm"}},
+                {"metricsIndex": 2, "key": "sumAccumulatedPower", "unit": {"key": "watt"}},
+            ],
+            "activityDetailMetrics": [{"metrics": [0.0, 120.0, 65535.0]}, {"metrics": [10.123456789, None, 65535.0]}],
+        })
+
+    def get_activity(self, activity_id: str) -> dict:
+        return self._detail("summary", activity_id, {"summaryDTO": {"minHR": 90.0}})
+
+    def get_activity_splits(self, activity_id: str) -> dict:
+        return self._detail("laps", activity_id, {"lapDTOs": [{"lapIndex": 1, "distance": 1000.0}]})
+
+    def get_activity_typed_splits(self, activity_id: str) -> dict:
+        return self._detail("typed_splits", activity_id, {"splits": []})
+
+    def get_activity_split_summaries(self, activity_id: str) -> dict:
+        return self._detail("split_summaries", activity_id, {"splitSummaries": []})
+
+    def get_activity_weather(self, activity_id: str) -> dict:
+        return self._detail("weather", activity_id, {"temp": 55, "relativeHumidity": 94})
+
+    def get_activity_hr_in_timezones(self, activity_id: str) -> list:
+        return self._detail("hr_zones", activity_id, [{"zoneNumber": 1, "secsInZone": 60.0, "zoneLowBoundary": 98}])
+
+    def get_activity_power_in_timezones(self, activity_id: str) -> list:
+        return self._detail("power_zones", activity_id, [])
+
+    def get_activity_exercise_sets(self, activity_id: str) -> dict:
+        return self._detail("exercise_sets", activity_id, {"exerciseSets": [{"setType": "ACTIVE"}]})
 
     def get_gear(self, profile: str) -> list[dict]:
         self.gear_calls.append("list")
@@ -127,7 +168,7 @@ def test_full_then_incremental_sync(auth, monkeypatch):
     assert client.post("/api/sync", headers=auth).json()["imported"] == 1
     assert fake.calls == 1
 
-    rows = client.get("/api/activities?limit=5", headers=auth).json()
+    rows = client.get("/api/activities?limit=5", headers=auth).json()["items"]
     assert len(rows) == 5
     assert rows[0]["name"] == "Morning run"
     assert rows[0]["start_time_utc"].endswith("+00:00")
@@ -151,15 +192,15 @@ def test_track_is_fetched_once_then_stored(auth, monkeypatch):
     fake = FakeGarmin([outdoor, indoor])
     monkeypatch.setattr(garmin, "connect", lambda db: fake)
     client.post("/api/sync", headers=auth)
-    fake.calls = 0
+    track_calls = lambda: [c for c in fake.detail_calls if c.startswith("track")]  # noqa: E731
 
     r = client.get("/api/activities/2001/track", headers=auth)
     assert r.json() == {"points": [[48.9, 2.1]]}  # points without coordinates are dropped
     client.get("/api/activities/2001/track", headers=auth)
-    assert fake.calls == 1  # second request served from the database
+    assert track_calls() == ["track 2001"]  # second request served from the database
 
     assert client.get("/api/activities/2000/track", headers=auth).json() == {"points": []}
-    assert fake.calls == 1  # no GPS: Garmin isn't called
+    assert track_calls() == ["track 2001"]  # no GPS: Garmin isn't called
 
     assert client.get("/api/activities/999/track", headers=auth).status_code == 404
 
@@ -242,3 +283,159 @@ def test_gear_failure_does_not_break_activity_sync(auth, monkeypatch):
     assert r.status_code == 200
     assert r.json()["imported"] == 1
     assert r.json()["gear_changed"] is False
+
+
+def test_activity_page_data_fits_each_kind_of_activity(auth, monkeypatch):
+    client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
+    run = {**activity(5003, "Outdoor run"), "hasPolyline": True, "startLatitude": 48.9}
+    pool = {**activity(5002, "Pool"), "activityType": {"typeKey": "lap_swimming"}}  # no GPS
+    manual = {**activity(5001, "Typed in"), "manualActivity": True}
+    strength = {**activity(5000, "Gym"), "activityType": {"typeKey": "strength_training"}}
+    fake = FakeGarmin([run, pool, manual, strength])
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    monkeypatch.setattr(garmin, "BACKFILL_BATCH", 0)  # keep the post-sync backfill out of this test
+    client.post("/api/sync", headers=auth)
+
+    # The summary page data comes from the database: every raw field, plus the gear.
+    page = client.get("/api/activities/5003", headers=auth).json()
+    assert page["raw"]["activityName"] == "Outdoor run" and page["gear"] == []
+    assert client.get("/api/activities/404404", headers=auth).status_code == 404
+
+    # Outdoor run: everything is fetched, columns per metric, Garmin's "no sensor" dropped.
+    fake.detail_calls.clear()
+    d = client.get("/api/activities/5003/details", headers=auth).json()
+    assert d["series"]["metrics"] == {"sumDistance": [0.0, 10.123457], "directHeartRate": [120.0, None]}
+    assert d["series"]["units"]["directHeartRate"] == "bpm"
+    assert d["weather"]["temp"] == 55 and d["laps"][0]["distance"] == 1000.0 and d["summary"]["minHR"] == 90.0
+    assert d["exercise_sets"] is None and d["power_zones"] is None  # not a strength session, no power
+    assert "weather 5003" in fake.detail_calls
+    fake.detail_calls.clear()
+    assert client.get("/api/activities/5003/details", headers=auth).json() == d
+    assert fake.detail_calls == []  # stored: no second trip to Garmin
+
+    # Pool swim: no GPS, so no weather call. Manual entry: no samples at all.
+    client.get("/api/activities/5002/details", headers=auth)
+    assert "weather 5002" not in fake.detail_calls
+    m = client.get("/api/activities/5001/details", headers=auth).json()
+    assert m["series"] is None and m["weather"] is None
+    assert not any(c.endswith(" 5001") and c.split()[0] in ("series", "weather", "hr_zones") for c in fake.detail_calls)
+
+    # Strength session: exercise sets are requested.
+    assert client.get("/api/activities/5000/details", headers=auth).json()["exercise_sets"] == [{"setType": "ACTIVE"}]
+
+
+def test_activity_details_failures(auth, monkeypatch):
+    from garminconnect import GarminConnectNotFoundError, GarminConnectTooManyRequestsError
+
+    client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
+    fake = FakeGarmin([{**activity(6001, "Run"), "hasPolyline": True}, {**activity(6000, "Run"), "hasPolyline": True}])
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    monkeypatch.setattr(garmin, "BACKFILL_BATCH", 0)
+    client.post("/api/sync", headers=auth)
+
+    def not_found():
+        raise GarminConnectNotFoundError("no weather")
+
+    def flaky():
+        raise RuntimeError("timeout")
+
+    # Not found = no data, and the result is stored.
+    fake.detail_overrides = {"weather": not_found}
+    assert client.get("/api/activities/6001/details", headers=auth).json()["weather"] is None
+    fake.detail_calls.clear()
+    client.get("/api/activities/6001/details", headers=auth)
+    assert fake.detail_calls == []
+
+    # A temporary failure: shown without that part, but not stored, so the next view retries.
+    fake.detail_overrides = {"weather": flaky}
+    assert client.get("/api/activities/6000/details", headers=auth).json()["weather"] is None
+    fake.detail_overrides = {}
+    fake.detail_calls.clear()
+    assert client.get("/api/activities/6000/details", headers=auth).json()["weather"]["temp"] == 55
+    assert fake.detail_calls  # fetched again
+
+    # Rate limited: reported to the app like the sync does.
+    def limited():
+        raise GarminConnectTooManyRequestsError("slow down")
+
+    fake.activities.insert(0, {**activity(6002, "Run"), "hasPolyline": True})
+    client.post("/api/sync", headers=auth)
+    fake.detail_overrides = {"summary": limited}
+    assert client.get("/api/activities/6002/details", headers=auth).status_code == 429
+
+
+def test_sync_backfills_details_in_the_background(auth, monkeypatch):
+    client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
+    runs = [{**activity(i, "Run"), "hasPolyline": True} for i in range(7010, 7000, -1)]
+    fake = FakeGarmin(runs)
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    monkeypatch.setattr(garmin, "BACKFILL_BATCH", 4)  # batch of 4 per sync
+    client.post("/api/sync", headers=auth)
+    fetched = sorted({int(c.split()[1]) for c in fake.detail_calls if c.startswith("summary")})
+    assert fetched == [7007, 7008, 7009, 7010]  # newest first
+
+    fake.detail_calls.clear()
+    client.post("/api/sync", headers=auth)
+    fetched = sorted({int(c.split()[1]) for c in fake.detail_calls if c.startswith("summary")})
+    assert fetched == [7003, 7004, 7005, 7006]  # continues with the next ones
+
+
+def test_activity_list_filters_and_sorts(auth, monkeypatch):
+    def run(activity_id: int, day: str, km: float, hr: float | None, name: str) -> dict:
+        start = datetime.fromisoformat(f"{day}T07:00:00")
+        return {
+            **activity(activity_id, name),
+            "startTimeGMT": start.strftime("%Y-%m-%d %H:%M:%S"),
+            "startTimeLocal": (start + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M:%S"),
+            "distance": km * 1000,
+            "averageHR": hr,
+            "averageSpeed": km * 1000 / 3600,
+        }
+
+    client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
+    fake = FakeGarmin([  # newest first, like Garmin; all in 2030 to stay clear of other tests' data
+        run(8004, "2030-03-20", 21.1, 150.0, "Half"),
+        run(8003, "2030-03-10", 5.0, None, "Easy"),  # no heart rate
+        run(8002, "2030-02-15", 10.0, 160.0, "Tempo"),
+        run(8001, "2030-01-05", 42.2, 145.0, "Marathon"),
+    ])
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    monkeypatch.setattr(garmin, "BACKFILL_BATCH", 0)
+    client.post("/api/sync", headers=auth)
+
+    def names(query: str) -> tuple[list[str], int]:
+        r = client.get(f"/api/activities?date_from=2030-01-01&date_to=2030-12-31&{query}", headers=auth).json()
+        return [a["name"] for a in r["items"]], r["total"]
+
+    assert names("") == (["Half", "Easy", "Tempo", "Marathon"], 4)  # newest first by default
+    assert names("date_from=2030-02-15&date_to=2030-03-10") == (["Easy", "Tempo"], 2)  # both ends inclusive
+    assert names("min_distance=8000&max_distance=25000") == (["Half", "Tempo"], 2)
+    assert names("sort=distance&order=desc") == (["Marathon", "Half", "Tempo", "Easy"], 4)
+    assert names("sort=name&order=asc")[0] == ["Easy", "Half", "Marathon", "Tempo"]
+    # Missing heart rate goes last whichever the direction.
+    assert names("sort=hr&order=desc")[0] == ["Tempo", "Half", "Marathon", "Easy"]
+    assert names("sort=hr&order=asc")[0] == ["Marathon", "Half", "Tempo", "Easy"]
+    # Paging keeps the order and the total.
+    assert names("sort=distance&order=asc&limit=2&offset=2") == (["Half", "Marathon"], 4)
+    assert client.get("/api/activities?sort=calories", headers=auth).status_code == 422
+
+
+def test_activity_list_filters_by_sport(auth, monkeypatch):
+    client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
+    def at(activity_id: int, type_key: str) -> dict:
+        start = datetime(2031, 1, 1) + timedelta(hours=activity_id - 9000)
+        return {**activity(activity_id, type_key), "activityType": {"typeKey": type_key},
+                "startTimeGMT": start.strftime("%Y-%m-%d %H:%M:%S"), "startTimeLocal": start.strftime("%Y-%m-%d %H:%M:%S")}
+    fake = FakeGarmin([at(9003, "trail_running"), at(9002, "road_biking"), at(9001, "running")])
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    monkeypatch.setattr(garmin, "BACKFILL_BATCH", 0)
+    client.post("/api/sync", headers=auth)
+
+    only_2031 = "date_from=2031-01-01&date_to=2031-12-31"
+    r = client.get(f"/api/activities?{only_2031}&sport=running", headers=auth).json()
+    assert [a["name"] for a in r["items"]] == ["trail_running", "running"]  # every running type
+    assert r["total"] == 2
+    assert [a["name"] for a in client.get(f"/api/activities?{only_2031}&sport=cycling", headers=auth).json()["items"]] == ["road_biking"]
+    assert client.get(f"/api/activities?{only_2031}&sport=swimming", headers=auth).json()["total"] == 0
+    assert {"running", "cycling"} <= set(r["families"])  # the families that exist, for the buttons
+    assert client.get("/api/activities?sport=chess", headers=auth).status_code == 422

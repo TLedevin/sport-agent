@@ -1,8 +1,9 @@
 import { ChartColumn, Table } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
-import type { Bucket, BucketUnit, EvolutionRange, Family, Series } from "../api";
+import { useState } from "react";
+import type { Bucket, BucketUnit, EvolutionRange, Family, BucketSeries } from "../api";
 import { hours, km, shortDate } from "../format";
 import { FAMILIES, SPORTS, sportColor } from "../sports";
+import { useWidth } from "../useWidth";
 
 const PLOT_HEIGHT = 256;
 const TOP = 26; // room for the cap label
@@ -60,22 +61,6 @@ function restLabel(unit: BucketUnit): string {
   return unit === "day" || unit === "week" ? `Rest ${unit}` : "No activity";
 }
 
-/** Tracks an element's width. A callback ref, so it re-attaches whenever the element is re-created
- * (e.g. switching back from the table view) and measures immediately instead of waiting for a resize. */
-function useWidth<T extends HTMLElement>() {
-  const [width, setWidth] = useState(0);
-  const observer = useRef<ResizeObserver | null>(null);
-  const ref = useCallback((node: T | null) => {
-    observer.current?.disconnect();
-    observer.current = null;
-    if (!node) return;
-    setWidth(node.getBoundingClientRect().width);
-    observer.current = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
-    observer.current.observe(node);
-  }, []);
-  return [ref, width] as const;
-}
-
 /** Clean tick step (1, 2, 2.5 or 5 times a power of ten) for roughly 4 gridlines. */
 function niceStep(max: number): number {
   const raw = max / 4;
@@ -104,7 +89,7 @@ function Segmented<T extends string>({ label, options, value, onChange }: {
   );
 }
 
-export default function EvolutionChart({ evolution }: { evolution: Record<EvolutionRange, Series[]> }) {
+export default function EvolutionChart({ evolution }: { evolution: Record<EvolutionRange, BucketSeries[]> }) {
   const [wrapRef, width] = useWidth<HTMLDivElement>();
   const [hovered, setHovered] = useState<number | null>(null);
   const [showTable, setShowTable] = useState(false);

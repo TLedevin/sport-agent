@@ -2,21 +2,22 @@ import logging
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
+from typing import Literal
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from garminconnect import GarminConnectAuthenticationError, GarminConnectTooManyRequestsError
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from . import dashboard, garmin
 from .auth import check_password, create_session, require_session
 from .config import get_settings
-from .db import get_db, wake_database
+from .db import SessionLocal, get_db, wake_database
 from .models import Activity, ActivityGear, GarminAuth, Gear
-from .sports import sport_family
+from .sports import FAMILIES, sport_family
 
 logging.basicConfig(level=logging.INFO)
 
@@ -99,22 +100,104 @@ def _activity_json(a: Activity) -> dict:
     }
 
 
+SORT_COLUMNS = {
+    "date": Activity.start_time_utc,
+    "name": Activity.name,
+    "distance": Activity.distance,
+    "duration": Activity.duration,
+    "speed": Activity.average_speed,
+    "hr": Activity.average_hr,
+    "elevation": Activity.elevation_gain,
+}
+
+
 @app.get("/api/activities", dependencies=authed)
-def list_activities(limit: int = 50, offset: int = 0, db: Session = Depends(get_db)) -> list[dict]:
+def list_activities(
+    limit: int = 50,
+    offset: int = 0,
+    date_from: date | None = None,  # the athlete's local dates, both inclusive
+    date_to: date | None = None,
+    min_distance: float | None = None,  # meters
+    max_distance: float | None = None,
+    sport: Literal["running", "cycling", "swimming", "walking", "fitness", "other"] | None = None,  # family
+    sort: Literal["date", "name", "distance", "duration", "speed", "hr", "elevation"] = "date",
+    order: Literal["asc", "desc"] = "desc",
+    db: Session = Depends(get_db),
+) -> dict:
+    """A page of activities matching the filters, how many match in total, and which sport
+    families exist at all (for the filter buttons)."""
+    # Families are derived from Garmin's sport type, not stored: filter on the matching types.
+    types_by_family: dict[str, list[str]] = {}
+    for sport_type in db.scalars(select(Activity.sport_type).distinct()):
+        types_by_family.setdefault(sport_family(sport_type), []).append(sport_type)
+    filters = []
+    if sport:
+        filters.append(Activity.sport_type.in_(types_by_family.get(sport, [])))
+    if date_from:
+        filters.append(Activity.start_time_local >= datetime.combine(date_from, datetime.min.time()))
+    if date_to:
+        filters.append(Activity.start_time_local < datetime.combine(date_to + timedelta(days=1), datetime.min.time()))
+    if min_distance is not None:
+        filters.append(Activity.distance >= min_distance)
+    if max_distance is not None:
+        filters.append(Activity.distance <= max_distance)
+
+    column = SORT_COLUMNS[sort]
     rows = db.scalars(
         select(Activity)
-        .order_by(Activity.start_time_utc.desc())
+        .where(*filters)
+        # Missing values (no heart rate, no elevation...) last in both directions. Written as a
+        # CASE rather than NULLS LAST, which SQL Server doesn't support.
+        .order_by(
+            case((column.is_(None), 1), else_=0),
+            column.asc() if order == "asc" else column.desc(),
+            Activity.id.desc(),  # stable order across pages
+        )
         .offset(offset)
         .limit(min(limit, 200))
     )
-    return [_activity_json(a) for a in rows]
+    total = db.scalar(select(func.count()).select_from(Activity).where(*filters))
+    return {
+        "items": [_activity_json(a) for a in rows],
+        "total": total,
+        "families": [f for f in FAMILIES if f in types_by_family],
+    }
+
+
+def _get_activity(db: Session, activity_id: int) -> Activity:
+    activity = db.get(Activity, activity_id)
+    if activity is None:
+        raise HTTPException(404, "Activity not found")
+    return activity
+
+
+@app.get("/api/activities/{activity_id}", dependencies=authed)
+def get_activity(activity_id: int, db: Session = Depends(get_db)) -> dict:
+    """The stored summary with every Garmin field, and the gear used. Answers from the database."""
+    activity = _get_activity(db, activity_id)
+    gear = db.execute(
+        select(Gear.uuid, Gear.name, Gear.gear_type)
+        .join(ActivityGear, ActivityGear.gear_uuid == Gear.uuid)
+        .where(ActivityGear.activity_id == activity_id)
+    ).all()
+    return {
+        **_activity_json(activity),
+        "raw": activity.raw,
+        "gear": [{"uuid": g.uuid, "name": g.name, "gear_type": g.gear_type} for g in gear],
+    }
+
+
+@app.get("/api/activities/{activity_id}/details", dependencies=authed)
+def get_activity_details(activity_id: int, db: Session = Depends(get_db)) -> dict:
+    """Time series, laps, weather, zones...: fetched from Garmin on first view, then stored."""
+    activity = _get_activity(db, activity_id)
+    with _garmin_errors():
+        return garmin.details(db, activity)
 
 
 @app.get("/api/activities/{activity_id}/track", dependencies=authed)
 def get_track(activity_id: int, db: Session = Depends(get_db)) -> dict:
-    activity = db.get(Activity, activity_id)
-    if activity is None:
-        raise HTTPException(404, "Activity not found")
+    activity = _get_activity(db, activity_id)
     with _garmin_errors():
         points = garmin.track(db, activity)
     return {"points": points}
@@ -212,13 +295,23 @@ def put_garmin_tokens(body: TokensRequest, db: Session = Depends(get_db)) -> dic
     return {"connected": True}
 
 
+def _backfill_details() -> None:
+    """After the response: pre-load details for activities that don't have them yet."""
+    try:
+        with SessionLocal() as db:
+            garmin.backfill_details(db)
+    except Exception:
+        logging.getLogger(__name__).exception("Details backfill failed; the next sync retries")
+
+
 @app.post("/api/sync", dependencies=authed)
-def sync(db: Session = Depends(get_db)) -> dict:
+def sync(background: BackgroundTasks, db: Session = Depends(get_db)) -> dict:
     try:
         with _garmin_errors():
             result = garmin.sync(db)
     except garmin.SyncInProgress:
         raise HTTPException(409, "sync_in_progress")
+    background.add_task(_backfill_details)
     auth = db.get(GarminAuth, 1)
     return {
         "imported": result.imported,

@@ -26,6 +26,44 @@ export type Activity = {
   has_track: boolean;
 };
 
+export type SortField = "date" | "name" | "distance" | "duration" | "speed" | "hr" | "elevation";
+/** Filters and sort for the activity list. Dates are the athlete's local dates; distances in meters. */
+export type ActivityQuery = {
+  date_from?: string;
+  date_to?: string;
+  min_distance?: number;
+  max_distance?: number;
+  sport?: Family;
+  sort: SortField;
+  order: "asc" | "desc";
+};
+/** `families`: the sport families that exist in the data, for the filter buttons. */
+export type ActivityList = { items: Activity[]; total: number; families: Family[] };
+
+/** Garmin's own field names and values, as stored: the page picks what each activity has. */
+export type GarminFields = Record<string, unknown>;
+
+export type ActivityPageData = Activity & {
+  raw: GarminFields;
+  gear: { uuid: string; name: string; gear_type: string }[];
+};
+
+/** One value per sample for each metric (Garmin keys, e.g. directHeartRate); null where missing. */
+export type Series = { length: number; metrics: Record<string, (number | null)[]>; units: Record<string, string | null> };
+
+/** Everything beyond the summary. Each part is null when this kind of activity doesn't have it. */
+export type ActivityDetails = {
+  summary: GarminFields | null;
+  series: Series | null;
+  laps: GarminFields[] | null;
+  typed_splits: GarminFields[] | null;
+  split_summaries: GarminFields[] | null;
+  weather: GarminFields | null;
+  hr_zones: { zoneNumber: number; secsInZone: number; zoneLowBoundary: number }[] | null;
+  power_zones: { zoneNumber: number; secsInZone: number; zoneLowBoundary: number }[] | null;
+  exercise_sets: GarminFields[] | null;
+};
+
 export type Totals = { count: number; distance: number; duration: number; elevation_gain: number };
 export type PeriodKey = "week" | "month" | "year";
 export type EvolutionRange = "1m" | "3m" | "6m" | "1y" | "all";
@@ -36,7 +74,7 @@ export type Bucket = {
   duration_by_family: Record<Family, number>;
   distance_by_family: Record<Family, number>;
 };
-export type Series = { unit: BucketUnit; buckets: Bucket[] };
+export type BucketSeries = { unit: BucketUnit; buckets: Bucket[] };
 export type FamilyTotals = Totals & { family: Family };
 export type PersonalRecord = {
   key: string;
@@ -54,7 +92,7 @@ export type Dashboard = {
   /** Only sports active since 1 January last year, in palette order. */
   periods_by_family: Partial<Record<Family, Periods>>;
   /** Per range, one series per granularity it offers; the first is the default. */
-  evolution: Record<EvolutionRange, Series[]>;
+  evolution: Record<EvolutionRange, BucketSeries[]>;
   breakdown: FamilyTotals[];
   records: PersonalRecord[];
   last_activity: Activity | null;
@@ -135,8 +173,13 @@ export const api = {
   login: (password: string) =>
     request<{ token: string }>("/api/auth/login", { method: "POST", body: JSON.stringify({ password }) }),
   dashboard: () => request<Dashboard>(`/api/dashboard?today=${localToday()}`),
-  activities: (limit: number, offset: number) =>
-    request<Activity[]>(`/api/activities?limit=${limit}&offset=${offset}`),
+  activities: (limit: number, offset: number, query: ActivityQuery) => {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    for (const [key, value] of Object.entries(query)) if (value !== undefined) params.set(key, String(value));
+    return request<ActivityList>(`/api/activities?${params}`);
+  },
+  activity: (activityId: number) => request<ActivityPageData>(`/api/activities/${activityId}`),
+  activityDetails: (activityId: number) => request<ActivityDetails>(`/api/activities/${activityId}/details`),
   track: (activityId: number) => request<Track>(`/api/activities/${activityId}/track`),
   gear: () => request<Gear[]>("/api/gear"),
   garminStatus: () => request<GarminStatus>("/api/garmin/status"),

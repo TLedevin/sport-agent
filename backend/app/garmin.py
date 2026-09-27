@@ -6,11 +6,18 @@ import threading
 from datetime import UTC, datetime
 from typing import NamedTuple
 
-from garminconnect import Garmin
+from garminconnect import (
+    Garmin,
+    GarminConnectAuthenticationError,
+    GarminConnectConnectionError,
+    GarminConnectNotFoundError,
+    GarminConnectTooManyRequestsError,
+)
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from .models import Activity, ActivityGear, ActivityTrack, GarminAuth, Gear
+from .models import Activity, ActivityDetail, ActivityGear, ActivityTrack, GarminAuth, Gear
+from .sports import sport_family
 
 log = logging.getLogger(__name__)
 
@@ -210,3 +217,154 @@ def track(db: Session, activity: Activity, client: Garmin | None = None) -> list
     db.add(ActivityTrack(activity_id=activity.id, points=points, fetched_at=_utcnow()))
     db.commit()
     return points
+
+
+# --- Activity details ----------------------------------------------------------
+
+DETAILS_VERSION = 1  # bump when the stored shape changes, so old rows are re-fetched
+MAX_CHART_POINTS = 2000  # time-series samples per activity (Garmin downsamples long ones)
+NO_DATA = 65535  # Garmin's placeholder for "no sensor", e.g. power without a power meter
+
+
+class _Retry(Exception):
+    """A call failed for a reason worth retrying later: don't cache the result."""
+
+
+def _optional(fetch):
+    """Endpoints an activity may simply not have: 'not found' means no data. Rate limits and
+    expired logins propagate; anything else means the result must not be cached."""
+    try:
+        return fetch()
+    except (GarminConnectAuthenticationError, GarminConnectTooManyRequestsError):
+        raise
+    except GarminConnectNotFoundError:
+        return None
+    except GarminConnectConnectionError as err:
+        status = getattr(getattr(err, "response", None), "status_code", None)
+        if status in (400, 404):
+            return None
+        raise _Retry() from err
+    except Exception as err:
+        raise _Retry() from err
+
+
+def _round(value):
+    return round(value, 6) if isinstance(value, float) else value
+
+
+def _series(details: dict | None) -> dict | None:
+    """Garmin's row-per-sample metrics as one column per metric, dropping empty ones."""
+    if not details:
+        return None
+    descriptors = details.get("metricDescriptors") or []
+    rows = details.get("activityDetailMetrics") or []
+    if not descriptors or not rows:
+        return None
+    columns, units = {}, {}
+    for d in descriptors:
+        i = d["metricsIndex"]
+        values = [_round(r["metrics"][i]) if i < len(r["metrics"]) else None for r in rows]
+        if all(v is None or v == NO_DATA for v in values):
+            continue
+        columns[d["key"]] = [None if v == NO_DATA else v for v in values]
+        units[d["key"]] = (d.get("unit") or {}).get("key")
+    return {"length": len(rows), "metrics": columns, "units": units} if columns else None
+
+
+def _weather(weather: dict | None) -> dict | None:
+    """Indoor activities get a record with every value empty: treat it as no weather."""
+    if not weather or weather.get("temp") is None:
+        return None
+    return weather
+
+
+def fetch_details(activity: Activity, client: Garmin) -> tuple[dict, bool]:
+    """Everything Garmin offers for one activity. Returns (data, complete): incomplete data
+    (a call failed in a retryable way) is shown but not cached.
+
+    Activities differ a lot: manual entries have no samples, pool swims no GPS or weather,
+    strength sessions have exercise sets... so each call is only made when it can return data.
+    """
+    raw, aid = activity.raw, str(activity.id)
+    manual = bool(raw.get("manualActivity"))
+    has_gps = bool(raw.get("hasPolyline")) or raw.get("startLatitude") is not None
+    has_power = any(k in raw for k in ("avgPower", "maxPower", "normPower"))
+    strength = sport_family(activity.sport_type) == "fitness" or "summarizedExerciseSets" in raw
+
+    calls = {
+        "summary": lambda: (client.get_activity(aid) or {}).get("summaryDTO"),
+        "series": None if manual else lambda: _series(
+            client.get_activity_details(aid, maxchart=MAX_CHART_POINTS, maxpoly=0)
+        ),
+        "laps": lambda: (client.get_activity_splits(aid) or {}).get("lapDTOs") or [],
+        "typed_splits": None if manual else lambda: (client.get_activity_typed_splits(aid) or {}).get("splits") or [],
+        "split_summaries": None if manual else lambda: (
+            client.get_activity_split_summaries(aid) or {}
+        ).get("splitSummaries") or [],
+        "weather": (lambda: _weather(client.get_activity_weather(aid))) if has_gps and not manual else None,
+        "hr_zones": None if manual else lambda: client.get_activity_hr_in_timezones(aid) or [],
+        "power_zones": (lambda: client.get_activity_power_in_timezones(aid) or []) if has_power else None,
+        "exercise_sets": (
+            (lambda: (client.get_activity_exercise_sets(aid) or {}).get("exerciseSets") or []) if strength else None
+        ),
+    }
+    data: dict = {"version": DETAILS_VERSION}
+    complete = True
+    for name, fetch in calls.items():
+        if fetch is None:
+            data[name] = None
+            continue
+        try:
+            data[name] = _optional(fetch)
+        except _Retry:
+            log.warning("Activity %s: %s unavailable for now", aid, name, exc_info=True)
+            data[name] = None
+            complete = False
+    return data, complete
+
+
+def details(db: Session, activity: Activity, client: Garmin | None = None) -> dict:
+    """Stored details, fetching them from Garmin the first time."""
+    stored = db.get(ActivityDetail, activity.id)
+    if stored is not None and stored.data.get("version") == DETAILS_VERSION:
+        return stored.data
+    data, complete = fetch_details(activity, client or connect(db))
+    if complete:
+        db.merge(ActivityDetail(activity_id=activity.id, data=data, fetched_at=_utcnow()))
+        db.commit()
+    return data
+
+
+_backfill_lock = threading.Lock()
+BACKFILL_BATCH = 25
+
+
+def backfill_details(db: Session, limit: int | None = None) -> int:
+    """Fetch details for activities that don't have them yet, newest first. Run after a sync,
+    so the history fills in over time without slowing the sync down. Returns how many were stored."""
+    if not _backfill_lock.acquire(blocking=False):
+        return 0
+    limit = BACKFILL_BATCH if limit is None else limit
+    try:
+        have = select(ActivityDetail.activity_id).where(ActivityDetail.activity_id == Activity.id)
+        missing = db.scalars(
+            select(Activity).where(~have.exists()).order_by(Activity.start_time_utc.desc()).limit(limit)
+        ).all()
+        if not missing:
+            return 0
+        client = connect(db)
+        stored = 0
+        for activity in missing:
+            try:
+                data, complete = fetch_details(activity, client)
+            except GarminConnectTooManyRequestsError:
+                log.info("Details backfill paused: Garmin rate limit")
+                break
+            if complete:
+                db.merge(ActivityDetail(activity_id=activity.id, data=data, fetched_at=_utcnow()))
+                db.commit()
+                stored += 1
+        log.info("Details backfill stored %d activities", stored)
+        return stored
+    finally:
+        _backfill_lock.release()

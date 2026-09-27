@@ -1,5 +1,6 @@
 import { MapPin } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Link } from "react-router";
 import { api, type Activity } from "../api";
 import { activityDate, calories, clock, km, meters, paceOrSpeed, paceOrSpeedLabel, sportLabel } from "../format";
 import { SportBadge } from "../sports";
@@ -50,7 +51,11 @@ export default function ActivityCard({ activity, title }: { activity: Activity; 
         <div className="activity-card-head">
           <SportBadge family={activity.sport_family} size={40} />
           <div className="activity-card-title">
-            <h2>{activity.name || sportLabel(activity.sport_type)}</h2>
+            <h2>
+              <Link to={`/activities/${activity.id}`} className="title-link">
+                {activity.name || sportLabel(activity.sport_type)}
+              </Link>
+            </h2>
             <p className="card-sub">
               {sportLabel(activity.sport_type)} · {activityDate(activity.start_time_local)}
               {activity.location_name && (

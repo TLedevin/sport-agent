@@ -40,6 +40,17 @@ class ActivityTrack(Base):
     fetched_at: Mapped[datetime] = mapped_column(DateTime)
 
 
+class ActivityDetail(Base):
+    """Everything Garmin has beyond the summary: time series, laps, weather, zones...
+    Fetched once (on first view, or by the post-sync backfill), then served from here."""
+
+    __tablename__ = "activity_details"
+
+    activity_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    data: Mapped[dict] = mapped_column(JSON)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime)
+
+
 class Gear(Base):
     """Equipment from Garmin Connect (shoes, bikes...), with Garmin's own usage totals."""
 
