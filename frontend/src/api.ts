@@ -97,6 +97,16 @@ export type Dashboard = {
   records: PersonalRecord[];
   last_activity: Activity | null;
 };
+/** An activity on the map of all activities. */
+export type MapActivity = Pick<
+  Activity,
+  "id" | "name" | "sport_type" | "sport_family" | "start_time_local" | "distance" | "duration"
+> & {
+  /** [lat, lon] where it started, when Garmin knows it. */
+  start: [number, number] | null;
+  /** Simplified route as an encoded polyline; null until its GPS data has been loaded. */
+  route: string | null;
+};
 /** [lat, lon] pairs, in recording order. */
 export type Track = { points: [number, number][] };
 export type GarminStatus = { connected: boolean; tokens_updated_at: string | null; last_sync_at: string | null };
@@ -182,6 +192,7 @@ export const api = {
   activityDetails: (activityId: number) => request<ActivityDetails>(`/api/activities/${activityId}/details`),
   track: (activityId: number) => request<Track>(`/api/activities/${activityId}/track`),
   gear: () => request<Gear[]>("/api/gear"),
+  map: () => request<MapActivity[]>("/api/map"),
   garminStatus: () => request<GarminStatus>("/api/garmin/status"),
   sync: () => request<SyncResult>("/api/sync", { method: "POST" }),
 };
