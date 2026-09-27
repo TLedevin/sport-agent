@@ -155,7 +155,7 @@ def list_activities(
         )
         .offset(offset)
         .limit(min(limit, 200))
-    )
+    ).all()  # read every row now: SQL Server rejects the count below while results are pending
     total = db.scalar(select(func.count()).select_from(Activity).where(*filters))
     return {
         "items": [_activity_json(a) for a in rows],
