@@ -1,5 +1,7 @@
 import logging
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, date, datetime
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
@@ -27,6 +29,19 @@ app.add_middleware(
 )
 
 authed = [Depends(require_session)]
+
+
+@contextmanager
+def _garmin_errors() -> Iterator[None]:
+    """Garmin failures as HTTP errors the frontend knows how to explain."""
+    try:
+        yield
+    except garmin.GarminNotConnected:
+        raise HTTPException(409, "garmin_not_connected")
+    except GarminConnectAuthenticationError:
+        raise HTTPException(409, "garmin_reconnect_needed")
+    except GarminConnectTooManyRequestsError:
+        raise HTTPException(429, "garmin_rate_limited")
 
 
 def _iso_utc(value: datetime | None) -> str | None:
@@ -63,6 +78,27 @@ def login(body: LoginRequest) -> dict:
 # --- Authenticated ------------------------------------------------------------
 
 
+def _activity_json(a: Activity) -> dict:
+    return {
+        "id": a.id,
+        "name": a.name,
+        "sport_type": a.sport_type,
+        "sport_family": sport_family(a.sport_type),
+        "start_time_utc": _iso_utc(a.start_time_utc),
+        "start_time_local": a.start_time_local.isoformat(),
+        "location_name": a.raw.get("locationName"),
+        "distance": a.distance,
+        "duration": a.duration,
+        "moving_duration": a.moving_duration,
+        "elevation_gain": a.elevation_gain,
+        "average_speed": a.average_speed,
+        "average_hr": a.average_hr,
+        "max_hr": a.max_hr,
+        "calories": a.calories,
+        "has_track": bool(a.raw.get("hasPolyline")),
+    }
+
+
 @app.get("/api/activities", dependencies=authed)
 def list_activities(limit: int = 50, offset: int = 0, db: Session = Depends(get_db)) -> list[dict]:
     rows = db.scalars(
@@ -71,25 +107,17 @@ def list_activities(limit: int = 50, offset: int = 0, db: Session = Depends(get_
         .offset(offset)
         .limit(min(limit, 200))
     )
-    return [
-        {
-            "id": a.id,
-            "name": a.name,
-            "sport_type": a.sport_type,
-            "sport_family": sport_family(a.sport_type),
-            "start_time_utc": _iso_utc(a.start_time_utc),
-            "start_time_local": a.start_time_local.isoformat(),
-            "distance": a.distance,
-            "duration": a.duration,
-            "moving_duration": a.moving_duration,
-            "elevation_gain": a.elevation_gain,
-            "average_speed": a.average_speed,
-            "average_hr": a.average_hr,
-            "max_hr": a.max_hr,
-            "calories": a.calories,
-        }
-        for a in rows
-    ]
+    return [_activity_json(a) for a in rows]
+
+
+@app.get("/api/activities/{activity_id}/track", dependencies=authed)
+def get_track(activity_id: int, db: Session = Depends(get_db)) -> dict:
+    activity = db.get(Activity, activity_id)
+    if activity is None:
+        raise HTTPException(404, "Activity not found")
+    with _garmin_errors():
+        points = garmin.track(db, activity)
+    return {"points": points}
 
 
 @app.get("/api/dashboard", dependencies=authed)
@@ -119,7 +147,11 @@ def get_dashboard(today: date | None = None, db: Session = Depends(get_db)) -> d
         )
         for r in db.execute(select(*columns))
     ]
-    return dashboard.build(rows, today or datetime.now(UTC).date())
+    latest = db.scalars(select(Activity).order_by(Activity.start_time_utc.desc()).limit(1)).first()
+    return {
+        **dashboard.build(rows, today or datetime.now(UTC).date()),
+        "last_activity": _activity_json(latest) if latest else None,
+    }
 
 
 @app.get("/api/garmin/status", dependencies=authed)
@@ -149,14 +181,9 @@ def put_garmin_tokens(body: TokensRequest, db: Session = Depends(get_db)) -> dic
 @app.post("/api/sync", dependencies=authed)
 def sync(db: Session = Depends(get_db)) -> dict:
     try:
-        imported = garmin.sync(db)
-    except garmin.GarminNotConnected:
-        raise HTTPException(409, "garmin_not_connected")
+        with _garmin_errors():
+            imported = garmin.sync(db)
     except garmin.SyncInProgress:
         raise HTTPException(409, "sync_in_progress")
-    except GarminConnectAuthenticationError:
-        raise HTTPException(409, "garmin_reconnect_needed")
-    except GarminConnectTooManyRequestsError:
-        raise HTTPException(429, "garmin_rate_limited")
     auth = db.get(GarminAuth, 1)
     return {"imported": imported, "last_sync_at": _iso_utc(auth.last_sync_at) if auth else None}

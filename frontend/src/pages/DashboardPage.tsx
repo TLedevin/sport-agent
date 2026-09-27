@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { api, ApiError, type Dashboard } from "../api";
+import { api, ApiError, type Dashboard, type Family } from "../api";
+import ActivityCard from "../components/ActivityCard";
+import EvolutionChart from "../components/EvolutionChart";
 import PeriodTile from "../components/PeriodTile";
 import Records from "../components/Records";
 import SportBreakdown from "../components/SportBreakdown";
-import WeeklyChart from "../components/WeeklyChart";
+import SportFilter from "../components/SportFilter";
 import { errorNotice, useSync } from "../sync";
 
 function greeting(): string {
@@ -18,6 +20,7 @@ export default function DashboardPage() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [slow, setSlow] = useState(false);
+  const [sport, setSport] = useState<Family | null>(null);
 
   // Refetch after each sync that imported something. The previous render stays on
   // screen (dimmed) while reloading: no skeleton flash, no layout jump.
@@ -55,6 +58,9 @@ export default function DashboardPage() {
 
   const empty = data.periods.year.current.count === 0 && data.records.length === 0;
   const year = Number(data.today.slice(0, 4));
+  const families = Object.keys(data.periods_by_family) as Family[];
+  // A sport can drop out of the list (new year): fall back to all sports.
+  const periods = (sport && data.periods_by_family[sport]) || data.periods;
 
   return (
     <div className={`page ${loading ? "refetching" : ""}`}>
@@ -80,13 +86,17 @@ export default function DashboardPage() {
         </section>
       ) : (
         <>
+          {families.length > 1 && (
+            <SportFilter families={families} selected={periods === data.periods ? null : sport} onSelect={setSport} />
+          )}
           <div className="tiles">
-            <PeriodTile label="Last 7 days" compareLabel="vs previous 7 days" {...data.periods.week} />
-            <PeriodTile label="This month" compareLabel="vs same point last month" {...data.periods.month} />
-            <PeriodTile label="This year" compareLabel="vs same point last year" {...data.periods.year} />
+            <PeriodTile label="Last 7 days" compareLabel="vs previous 7 days" {...periods.week} />
+            <PeriodTile label="This month" compareLabel="vs same point last month" {...periods.month} />
+            <PeriodTile label="This year" compareLabel="vs same point last year" {...periods.year} />
           </div>
+          {data.last_activity && <ActivityCard activity={data.last_activity} title="Last activity" />}
           <div className="dash-row">
-            <WeeklyChart weeks={data.weekly} />
+            <EvolutionChart evolution={data.evolution} />
             <SportBreakdown breakdown={data.breakdown} year={year} />
           </div>
           <Records records={data.records} />

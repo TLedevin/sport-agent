@@ -13,6 +13,7 @@ export type Activity = {
   sport_family: Family;
   start_time_utc: string;
   start_time_local: string;
+  location_name: string | null;
   distance: number;
   duration: number;
   moving_duration: number | null;
@@ -21,11 +22,21 @@ export type Activity = {
   average_hr: number | null;
   max_hr: number | null;
   calories: number | null;
+  /** Garmin recorded GPS for it: the map can be fetched. */
+  has_track: boolean;
 };
 
 export type Totals = { count: number; distance: number; duration: number; elevation_gain: number };
 export type PeriodKey = "week" | "month" | "year";
-export type WeekBucket = { week_start: string; duration_by_family: Record<Family, number> };
+export type EvolutionRange = "1m" | "3m" | "6m" | "1y" | "all";
+export type BucketUnit = "day" | "week" | "month" | "year";
+/** One bar: seconds and meters per sport, from `start` (a date) to the next bucket. */
+export type Bucket = {
+  start: string;
+  duration_by_family: Record<Family, number>;
+  distance_by_family: Record<Family, number>;
+};
+export type Series = { unit: BucketUnit; buckets: Bucket[] };
 export type FamilyTotals = Totals & { family: Family };
 export type PersonalRecord = {
   key: string;
@@ -36,13 +47,20 @@ export type PersonalRecord = {
   family: Family;
   date: string;
 };
+export type Periods = Record<PeriodKey, { current: Totals; previous: Totals }>;
 export type Dashboard = {
   today: string;
-  periods: Record<PeriodKey, { current: Totals; previous: Totals }>;
-  weekly: WeekBucket[];
+  periods: Periods;
+  /** Only sports active since 1 January last year, in palette order. */
+  periods_by_family: Partial<Record<Family, Periods>>;
+  /** Per range, one series per granularity it offers; the first is the default. */
+  evolution: Record<EvolutionRange, Series[]>;
   breakdown: FamilyTotals[];
   records: PersonalRecord[];
+  last_activity: Activity | null;
 };
+/** [lat, lon] pairs, in recording order. */
+export type Track = { points: [number, number][] };
 export type GarminStatus = { connected: boolean; tokens_updated_at: string | null; last_sync_at: string | null };
 export type SyncResult = { imported: number; last_sync_at: string | null };
 
@@ -105,6 +123,7 @@ export const api = {
   dashboard: () => request<Dashboard>(`/api/dashboard?today=${localToday()}`),
   activities: (limit: number, offset: number) =>
     request<Activity[]>(`/api/activities?limit=${limit}&offset=${offset}`),
+  track: (activityId: number) => request<Track>(`/api/activities/${activityId}/track`),
   garminStatus: () => request<GarminStatus>("/api/garmin/status"),
   sync: () => request<SyncResult>("/api/sync", { method: "POST" }),
 };

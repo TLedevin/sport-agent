@@ -25,6 +25,7 @@ jobs:
         working-directory: frontend
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_JAWG_TOKEN: ${{ vars.VITE_JAWG_TOKEN }}
         run: |
           npm ci
           npm run build

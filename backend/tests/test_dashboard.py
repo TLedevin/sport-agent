@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from app.dashboard import Row, build, periods, records, weekly
+from app.dashboard import Row, build, periods, evolution, periods_by_family, records
 from app.sports import sport_family
 
 
@@ -50,19 +50,47 @@ def test_year_to_date_vs_same_span_last_year():
     assert year["previous"]["count"] == 1
 
 
-def test_weekly_buckets_start_on_monday_and_split_by_family():
+def test_evolution_ranges_and_buckets():
     today = date(2026, 9, 27)  # a Sunday
     rows = [
-        row(1, "running", "2026-09-21T07:00", time=1800),  # Monday of the current week
-        row(2, "road_biking", "2026-09-27T09:00", time=7200),
-        row(3, "running", "2026-09-20T07:00", time=600),  # previous week
+        row(1, "running", "2026-09-21T07:00", time=1800, distance=5000),  # Monday of the current week
+        row(2, "road_biking", "2026-09-27T09:00", time=7200, distance=60000),
+        row(3, "running", "2026-09-20T07:00", time=600, distance=2000),  # previous week
+        row(4, "running", "2024-11-15T07:00", time=900, distance=3000),  # oldest activity
     ]
-    weeks = weekly(rows, today)
-    assert len(weeks) == 12
-    assert weeks[-1]["week_start"] == "2026-09-21"
-    assert weeks[-1]["duration_by_family"]["running"] == 1800
-    assert weeks[-1]["duration_by_family"]["cycling"] == 7200
+    result = evolution(rows, today)
+    assert {k: [(v["unit"], len(v["buckets"])) for v in series] for k, series in result.items()} == {
+        "1m": [("day", 30), ("week", 5)],
+        "3m": [("week", 13), ("month", 3)],
+        "6m": [("week", 26), ("month", 6)],
+        "1y": [("month", 12)],
+        "all": [("month", 23), ("year", 3)],  # Nov 2024 to Sep 2026
+    }
+
+    days = result["1m"][0]["buckets"]
+    assert days[0]["start"] == "2026-08-29" and days[-1]["start"] == "2026-09-27"
+    assert days[-1]["distance_by_family"]["cycling"] == 60000
+
+    weeks = result["3m"][0]["buckets"]
+    assert weeks[-1]["start"] == "2026-09-21"
+    assert weeks[-1]["duration_by_family"] == {**weeks[-1]["duration_by_family"], "running": 1800, "cycling": 7200}
     assert weeks[-2]["duration_by_family"]["running"] == 600
+
+    months = result["1y"][0]["buckets"]
+    assert months[0]["start"] == "2025-10-01" and months[-1]["start"] == "2026-09-01"
+    assert months[-1]["distance_by_family"]["running"] == 7000
+    assert result["all"][0]["buckets"][0]["start"] == "2024-11-01"
+    assert result["all"][0]["buckets"][0]["distance_by_family"]["running"] == 3000
+
+    years = result["all"][1]["buckets"]
+    assert [y["start"] for y in years] == ["2024-01-01", "2025-01-01", "2026-01-01"]
+    assert years[-1]["distance_by_family"]["running"] == 7000
+
+
+def test_evolution_without_activities():
+    result = evolution([], date(2026, 9, 27))
+    assert len(result["all"][0]["buckets"]) == 1
+    assert len(result["all"][1]["buckets"]) == 1
 
 
 def test_records_pick_the_best_activity():
@@ -85,3 +113,18 @@ def test_empty_history():
     assert result["periods"]["week"]["current"]["count"] == 0
     assert result["breakdown"] == []
     assert result["records"] == []
+
+
+def test_periods_by_family_only_lists_recently_active_sports():
+    today = date(2026, 9, 27)
+    rows = [
+        row(1, "running", "2026-09-25T08:00"),
+        row(2, "road_biking", "2026-09-26T08:00", distance=40000.0),
+        row(3, "trail_running", "2025-03-01T08:00"),  # last year: still in the year comparison
+        row(4, "lap_swimming", "2024-12-31T08:00"),  # before last year: not offered
+    ]
+    result = periods_by_family(rows, today)
+    assert list(result) == ["running", "cycling"]  # palette order
+    assert result["running"]["week"]["current"]["count"] == 1
+    assert result["running"]["year"]["previous"]["count"] == 1
+    assert result["cycling"]["week"]["current"]["distance"] == 40000.0

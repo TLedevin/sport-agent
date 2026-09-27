@@ -57,6 +57,10 @@ class FakeGarmin:
         self.calls += 1
         return self.activities[start : start + limit]
 
+    def get_activity_details(self, activity_id: str, maxchart: int, maxpoly: int) -> dict:
+        self.calls += 1
+        return {"geoPolylineDTO": {"polyline": [{"lat": 48.9, "lon": 2.1}, {"lat": 48.91, "lon": None}]}}
+
 
 @pytest.fixture
 def auth() -> dict:
@@ -118,6 +122,27 @@ def test_full_then_incremental_sync(auth, monkeypatch):
     assert rows[0]["sport_family"] == "running"
 
     dash = client.get("/api/dashboard?today=2026-02-20", headers=auth).json()
-    assert set(dash) == {"today", "periods", "weekly", "breakdown", "records"}
+    assert set(dash) == {"today", "periods", "evolution", "breakdown", "records", "last_activity", "periods_by_family"}
+    assert dash["last_activity"]["name"] == "Morning run"
     assert dash["today"] == "2026-02-20"
-    assert len(dash["weekly"]) == 12
+    assert len(dash["evolution"]["3m"][0]["buckets"]) == 13
+
+
+def test_track_is_fetched_once_then_stored(auth, monkeypatch):
+    client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
+    outdoor = {**activity(2001, "Outdoor run"), "hasPolyline": True}
+    indoor = {**activity(2000, "Treadmill"), "hasPolyline": False}
+    fake = FakeGarmin([outdoor, indoor])
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    client.post("/api/sync", headers=auth)
+    fake.calls = 0
+
+    r = client.get("/api/activities/2001/track", headers=auth)
+    assert r.json() == {"points": [[48.9, 2.1]]}  # points without coordinates are dropped
+    client.get("/api/activities/2001/track", headers=auth)
+    assert fake.calls == 1  # second request served from the database
+
+    assert client.get("/api/activities/2000/track", headers=auth).json() == {"points": []}
+    assert fake.calls == 1  # no GPS: Garmin isn't called
+
+    assert client.get("/api/activities/999/track", headers=auth).status_code == 404

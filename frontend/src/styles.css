@@ -416,6 +416,51 @@ input:focus-visible {
   color: color-mix(in srgb, var(--badge-color) 72%, var(--text-primary));
 }
 
+/* ---------- Dashboard: sport filter ---------- */
+
+.sport-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: -4px;
+}
+
+.sport-filter-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  min-width: 40px;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.sport-filter-option:hover {
+  color: color-mix(in srgb, var(--badge-color) 72%, var(--text-primary));
+  border-color: color-mix(in srgb, var(--badge-color) 40%, transparent);
+}
+
+.sport-filter-option.active {
+  background: color-mix(in srgb, var(--badge-color) 16%, transparent);
+  border-color: color-mix(in srgb, var(--badge-color) 45%, transparent);
+  /* Same recipe as .sport-badge: legible on both themes. */
+  color: color-mix(in srgb, var(--badge-color) 72%, var(--text-primary));
+  padding-right: 14px;
+}
+
+.sport-filter-option:focus-visible {
+  outline: 2px solid var(--badge-color);
+  outline-offset: 2px;
+}
+
 /* ---------- Dashboard: tiles ---------- */
 
 .tiles {
@@ -486,6 +531,102 @@ input:focus-visible {
   }
 }
 
+/* ---------- Activity card ---------- */
+
+.activity-card.with-map {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 20px;
+}
+
+.activity-card-eyebrow {
+  margin: 0 0 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.activity-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.activity-card-title {
+  min-width: 0;
+}
+
+.activity-card-title h2 {
+  font-size: 1.2rem;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.activity-card-place {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 8px;
+}
+
+.activity-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 14px 16px;
+  margin: 0;
+}
+
+.activity-stats dt {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.activity-stats dd {
+  margin: 1px 0 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-map {
+  height: 100%;
+  min-height: 260px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface-2);
+  /* Keep Leaflet's own stacking below the app's sticky header. */
+  isolation: isolate;
+  z-index: 0;
+}
+
+.activity-map.placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.activity-map .leaflet-control-attribution {
+  font-size: 0.65rem;
+}
+
+/* Fallback OpenStreetMap tiles have no dark style: invert them, keeping hues roughly right. */
+@media (prefers-color-scheme: dark) {
+  .activity-map.osm .leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9) saturate(0.6);
+  }
+}
+
+@media (max-width: 860px) {
+  .activity-card.with-map {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* ---------- Dashboard: chart ---------- */
 
 .dash-row {
@@ -498,6 +639,64 @@ input:focus-visible {
   .dash-row {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin: -4px 0 14px;
+}
+
+.chart-controls-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.segmented button {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.segmented button:hover {
+  color: var(--text-primary);
+}
+
+.segmented button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+/* The card surface is darker than the track in dark mode: lift the selected option instead. */
+@media (prefers-color-scheme: dark) {
+  .segmented button[aria-pressed="true"] {
+    background: var(--baseline);
+  }
+}
+
+.segmented button:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 1px;
 }
 
 .legend {

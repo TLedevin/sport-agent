@@ -9,11 +9,12 @@ from garminconnect import Garmin
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Activity, GarminAuth
+from .models import Activity, ActivityTrack, GarminAuth
 
 log = logging.getLogger(__name__)
 
 PAGE_SIZE = 100
+MAX_TRACK_POINTS = 2000  # plenty for a card-sized map
 _sync_lock = threading.Lock()
 
 
@@ -108,3 +109,24 @@ def sync(db: Session, client: Garmin | None = None) -> int:
         return imported
     finally:
         _sync_lock.release()
+
+
+def track(db: Session, activity: Activity, client: Garmin | None = None) -> list[list[float]]:
+    """GPS points as [[lat, lon], ...]. Fetched from Garmin once, then served from the database."""
+    stored = db.get(ActivityTrack, activity.id)
+    if stored is not None:
+        return stored.points
+
+    points: list[list[float]] = []
+    if activity.raw.get("hasPolyline"):  # indoor activities have no GPS: skip the Garmin call
+        client = client or connect(db)
+        details = client.get_activity_details(str(activity.id), maxchart=1, maxpoly=MAX_TRACK_POINTS)
+        polyline = (details.get("geoPolylineDTO") or {}).get("polyline") or []
+        points = [
+            [round(p["lat"], 6), round(p["lon"], 6)]
+            for p in polyline
+            if p.get("lat") is not None and p.get("lon") is not None
+        ]
+    db.add(ActivityTrack(activity_id=activity.id, points=points, fetched_at=_utcnow()))
+    db.commit()
+    return points

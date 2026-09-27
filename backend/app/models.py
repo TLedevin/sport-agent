@@ -26,6 +26,20 @@ class Activity(Base):
     raw: Mapped[dict] = mapped_column(JSON)  # full Garmin payload, for future features
 
 
+class ActivityTrack(Base):
+    """GPS track, fetched from Garmin the first time an activity's map is shown.
+
+    A separate table rather than a column: create_all adds new tables but never
+    alters existing ones, so this needs no migration on Azure SQL.
+    """
+
+    __tablename__ = "activity_tracks"
+
+    activity_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    points: Mapped[list] = mapped_column(JSON)  # [[lat, lon], ...], empty when there's no GPS
+    fetched_at: Mapped[datetime] = mapped_column(DateTime)
+
+
 class GarminAuth(Base):
     """Single row (id=1) holding the Garmin session tokens."""
 
