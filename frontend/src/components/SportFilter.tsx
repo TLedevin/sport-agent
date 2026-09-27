@@ -28,10 +28,12 @@ export default function SportFilter({ families, selected, onSelect }: Props) {
             onClick={() => onSelect(key)}
           >
             <Icon size={18} strokeWidth={2} aria-hidden />
-            {active && <span>{label}</span>}
           </button>
         );
       })}
+      <span className="sport-filter-label" aria-hidden>
+        {options.find((o) => o.key === selected)?.label}
+      </span>
     </div>
   );
 }

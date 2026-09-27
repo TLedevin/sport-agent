@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { api, ApiError } from "./api";
+import Logo from "./components/Logo";
 
 export default function Login({ onLogin }: { onLogin: (token: string) => void }) {
   const [password, setPassword] = useState("");
@@ -23,7 +24,7 @@ export default function Login({ onLogin }: { onLogin: (token: string) => void })
     <main className="login">
       <form className="card login-card" onSubmit={submit}>
         <div className="brand login-brand">
-          <span className="brand-mark" aria-hidden />
+          <Logo size={32} />
           Sport Agent
         </div>
         <p className="login-sub">Your training, at a glance.</p>

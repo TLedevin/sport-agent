@@ -209,10 +209,8 @@ input:focus-visible {
 }
 
 .brand-mark {
-  width: 22px;
-  height: 22px;
-  border-radius: 7px;
-  background: linear-gradient(135deg, var(--sport-running), var(--sport-swimming));
+  flex: none;
+  display: block;
 }
 
 .nav {
@@ -421,24 +419,22 @@ input:focus-visible {
 .sport-filter {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   margin-bottom: -4px;
 }
 
+/* Fixed size: selecting a sport never shifts the row. */
 .sport-filter-option {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
   height: 40px;
-  min-width: 40px;
-  padding: 0 11px;
-  border-radius: 999px;
+  padding: 0;
+  border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text-secondary);
-  font: inherit;
-  font-size: 0.88rem;
-  font-weight: 600;
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
@@ -449,11 +445,19 @@ input:focus-visible {
 }
 
 .sport-filter-option.active {
-  background: color-mix(in srgb, var(--badge-color) 16%, transparent);
-  border-color: color-mix(in srgb, var(--badge-color) 45%, transparent);
+  /* A light tint over the card surface (opaque, so it never darkens with the page behind). */
+  background: color-mix(in srgb, var(--badge-color) 9%, var(--surface));
+  border-color: color-mix(in srgb, var(--badge-color) 55%, transparent);
   /* Same recipe as .sport-badge: legible on both themes. */
   color: color-mix(in srgb, var(--badge-color) 72%, var(--text-primary));
-  padding-right: 14px;
+}
+
+/* The selected sport in words, so the choice never relies on colour alone. */
+.sport-filter-label {
+  margin-left: 4px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 
 .sport-filter-option:focus-visible {
