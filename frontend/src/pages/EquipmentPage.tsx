@@ -1,6 +1,7 @@
 import { Bike, Footprints, Package, type LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, ApiError, type Gear } from "../api";
+import GearPhoto from "../components/GearPhoto";
 import { km, shortDate } from "../format";
 import { errorNotice, useSync } from "../sync";
 
@@ -40,11 +41,14 @@ function Wear({ gear }: { gear: Gear }) {
   );
 }
 
-function GearCard({ gear }: { gear: Gear }) {
+type PhotoChange = (uuid: string, version: string | null) => void;
+
+function GearCard({ gear, onPhotoChange }: { gear: Gear; onPhotoChange: PhotoChange }) {
   const Icon = gearIcon(gear.gear_type);
   const showModel = gear.make_model && gear.make_model.toLowerCase() !== gear.name.toLowerCase();
   return (
-    <li className={`card gear-card ${gear.status}`}>
+    <li className={`card gear-card ${gear.status} ${gear.photo_version ? "with-photo" : "no-photo"}`}>
+      <GearPhoto gear={gear} onChange={(version) => onPhotoChange(gear.uuid, version)} />
       <div className="gear-head">
         <span className="gear-icon" aria-hidden>
           <Icon size={18} />
@@ -84,7 +88,7 @@ function GearCard({ gear }: { gear: Gear }) {
   );
 }
 
-function GearSection({ title, items }: { title: string; items: Gear[] }) {
+function GearSection({ title, items, onPhotoChange }: { title: string; items: Gear[]; onPhotoChange: PhotoChange }) {
   if (items.length === 0) return null;
   return (
     <section aria-label={title}>
@@ -93,7 +97,7 @@ function GearSection({ title, items }: { title: string; items: Gear[] }) {
       </h2>
       <ul className="gear-grid">
         {items.map((g) => (
-          <GearCard key={g.uuid} gear={g} />
+          <GearCard key={g.uuid} gear={g} onPhotoChange={onPhotoChange} />
         ))}
       </ul>
     </section>
@@ -103,6 +107,8 @@ function GearSection({ title, items }: { title: string; items: Gear[] }) {
 export default function EquipmentPage() {
   const { version, syncing, setNotice } = useSync();
   const [gear, setGear] = useState<Gear[] | null>(null);
+  const setPhoto: PhotoChange = (uuid, version) =>
+    setGear((items) => items && items.map((g) => (g.uuid === uuid ? { ...g, photo_version: version } : g)));
 
   useEffect(() => {
     let cancelled = false;
@@ -138,8 +144,8 @@ export default function EquipmentPage() {
         </section>
       ) : (
         <>
-          <GearSection title="In use" items={gear.filter((g) => g.status === "active")} />
-          <GearSection title="Retired" items={gear.filter((g) => g.status !== "active")} />
+          <GearSection title="In use" items={gear.filter((g) => g.status === "active")} onPhotoChange={setPhoto} />
+          <GearSection title="Retired" items={gear.filter((g) => g.status !== "active")} onPhotoChange={setPhoto} />
         </>
       )}
     </div>

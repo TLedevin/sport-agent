@@ -637,3 +637,48 @@ def test_a_new_version_reads_the_whole_history_again(auth, monkeypatch):
         monkeypatch.setattr(fitness, "VERSION", fitness.VERSION + 1)
         fitness.sync(db, today=date(2030, 1, 1))
     assert fake.fitness_calls[0].startswith(f"max_metrics {first_day} ")  # from the first activity again
+
+
+def test_gear_photo_lifecycle(auth, monkeypatch):
+    import base64
+    from io import BytesIO
+
+    from PIL import Image
+
+    client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
+    pair = shoe("photo-pair", "Photo pair", "active", "2026-01-01", 1000.0, [])
+    fake = FakeGarmin([], gear=[pair])
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    monkeypatch.setattr(garmin, "BACKFILL_BATCH", 0)
+    client.post("/api/sync", headers=auth)
+    photo_version = lambda: next(g for g in client.get("/api/gear", headers=auth).json() if g["uuid"] == "photo-pair")["photo_version"]  # noqa: E731
+    assert photo_version() is None
+
+    out = BytesIO()
+    Image.new("RGB", (900, 600), "navy").save(out, "PNG")
+    data_url = "data:image/png;base64," + base64.b64encode(out.getvalue()).decode()
+    r = client.put("/api/gear/photo-pair/photo", json={"url": data_url}, headers=auth)
+    assert r.status_code == 200
+    assert photo_version() == r.json()["photo_version"]
+
+    r = client.get("/api/gear/photo-pair/photo", headers=auth)
+    assert r.headers["content-type"] == "image/webp"
+    assert "immutable" in r.headers["cache-control"]
+    assert Image.open(BytesIO(r.content)).size == (640, 427)
+    assert client.get("/api/gear/photo-pair/photo").status_code == 401  # the photo needs the session too
+
+    bad = client.put("/api/gear/photo-pair/photo", json={"url": "ftp://x"}, headers=auth)
+    assert bad.status_code == 422 and "https://" in bad.json()["detail"]
+    assert client.put("/api/gear/nope/photo", json={"url": data_url}, headers=auth).status_code == 404
+
+    assert client.delete("/api/gear/photo-pair/photo", headers=auth).status_code == 204
+    assert photo_version() is None
+    assert client.get("/api/gear/photo-pair/photo", headers=auth).status_code == 404
+
+    # Gear deleted in Garmin Connect: its photo goes too.
+    client.put("/api/gear/photo-pair/photo", json={"url": data_url}, headers=auth)
+    fake.gear = []
+    client.post("/api/sync", headers=auth)
+    from app.models import GearPhoto
+    with db_module.SessionLocal() as db:
+        assert db.get(GearPhoto, "photo-pair") is None

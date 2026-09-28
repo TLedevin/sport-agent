@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import JSON, BigInteger, Date, DateTime, Float, Integer, String, Text, Unicode
+from sqlalchemy import JSON, BigInteger, Date, DateTime, Float, Integer, LargeBinary, String, Text, Unicode
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -78,6 +78,18 @@ class Gear(Base):
     total_distance: Mapped[float] = mapped_column(Float, default=0)  # meters
     total_activities: Mapped[int] = mapped_column(Integer, default=0)
     raw: Mapped[dict] = mapped_column(JSON)  # Garmin's gear payload
+
+
+class GearPhoto(Base):
+    """A photo of a piece of gear, chosen in the app (Garmin has none). Stored shrunk (see photos.py)."""
+
+    __tablename__ = "gear_photos"
+
+    gear_uuid: Mapped[str] = mapped_column(String(64), primary_key=True)
+    image: Mapped[bytes] = mapped_column(LargeBinary)
+    content_type: Mapped[str] = mapped_column(String(32))
+    source_url: Mapped[str | None] = mapped_column(Text)  # where it came from; None when pasted as data
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
 
 
 class ActivityGear(Base):

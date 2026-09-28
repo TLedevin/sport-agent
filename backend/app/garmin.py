@@ -17,7 +17,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from . import routes
-from .models import Activity, ActivityDetail, ActivityGear, ActivityTrack, GarminAuth, Gear
+from .models import Activity, ActivityDetail, ActivityGear, ActivityTrack, GarminAuth, Gear, GearPhoto
 from .sports import sport_family
 
 log = logging.getLogger(__name__)
@@ -193,6 +193,7 @@ def sync_gear(db: Session, client: Garmin) -> bool:
 
     for gone in stored.values():  # deleted in Garmin Connect
         db.execute(delete(ActivityGear).where(ActivityGear.gear_uuid == gone.uuid))
+        db.execute(delete(GearPhoto).where(GearPhoto.gear_uuid == gone.uuid))
         db.delete(gone)
         changed = True
     db.commit()
