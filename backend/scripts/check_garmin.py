@@ -100,8 +100,8 @@ def check_fitness(garmin: Garmin) -> int:
     last = date.today()
     first = last - timedelta(days=90)
     errors = 0
-    for name, (fetch, parse) in SOURCES.items():
-        print(f"\n--- {name} ({first} to {last})")
+    for name, (fetch, parse, ranged) in SOURCES.items():
+        print(f"\n--- {name}" + (f" ({first} to {last})" if ranged else " (current value)"))
         try:
             payload = fetch(garmin, first.isoformat(), last.isoformat())
         except Exception as err:
