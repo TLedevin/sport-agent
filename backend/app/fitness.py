@@ -9,6 +9,7 @@ ignore the rest: an unexpected shape means missing values, never a failed sync.
 import logging
 from collections.abc import Callable, Iterator
 from datetime import UTC, date, datetime, timedelta
+from typing import NamedTuple
 
 from garminconnect import Garmin
 from sqlalchemy import func, select
@@ -22,6 +23,9 @@ log = logging.getLogger(__name__)
 CHUNK_DAYS = 364  # Garmin rejects race prediction ranges over a year
 OVERLAP_DAYS = 14  # re-read recent weeks: weekly scores and late uploads change them
 REFRESH_HOURS = 6  # a sync on every visit, but Garmin asked at most this often
+# Bump when a source or parser changes: every source then reads its whole history again once,
+# so values a previous version missed get filled in.
+VERSION = 2
 
 Row = tuple[date, str, float]
 
@@ -63,10 +67,12 @@ RACES = {"time5K": "race_5k", "time10K": "race_10k", "timeHalfMarathon": "race_h
 
 
 def parse_race_predictions(payload) -> list[Row]:
-    """Per day: {calendarDate, time5K, time10K, timeHalfMarathon, timeMarathon}, in seconds."""
+    """Per day: {calendarDate, time5K, time10K, timeHalfMarathon, timeMarathon}, in seconds.
+    The latest prediction is one such entry on its own."""
     rows = []
     for entry in _entries(payload):
-        if not (day := _day(entry.get("calendarDate"))):
+        day = _day(entry.get("calendarDate")) or _day(entry.get("toCalendarDate"))
+        if not day:
             continue
         for key, metric in RACES.items():
             if seconds := _number(entry.get(key)):
@@ -107,13 +113,26 @@ def parse_hill_score(payload) -> list[Row]:
     return rows
 
 
-# name -> (fetch(client, first, last), parse)
-SOURCES: dict[str, tuple[Callable[[Garmin, str, str], object], Callable[[object], list[Row]]]] = {
-    "max_metrics": (lambda c, first, last: c.get_max_metrics_range(first, last), parse_max_metrics),
-    "race_predictions": (lambda c, first, last: c.get_race_predictions(first, last, "daily"), parse_race_predictions),
-    "endurance_score": (lambda c, first, last: c.get_endurance_score(first, last), parse_endurance_score),
-    "hill_score": (lambda c, first, last: c.get_hill_score(first, last), parse_hill_score),
+class Source(NamedTuple):
+    fetch: Callable[[Garmin, str, str], object]  # (client, first day, last day)
+    parse: Callable[[object], list[Row]]
+    ranged: bool = True  # False: a single call for the current value, whatever the dates
+
+
+SOURCES: dict[str, Source] = {
+    "max_metrics": Source(lambda c, first, last: c.get_max_metrics_range(first, last), parse_max_metrics),
+    "race_predictions": Source(
+        lambda c, first, last: c.get_race_predictions(first, last, "daily"), parse_race_predictions
+    ),
+    # The daily history can come back empty while the current prediction exists: read both.
+    "race_predictions_latest": Source(lambda c, first, last: c.get_race_predictions(), parse_race_predictions, False),
+    "endurance_score": Source(lambda c, first, last: c.get_endurance_score(first, last), parse_endurance_score),
+    "hill_score": Source(lambda c, first, last: c.get_hill_score(first, last), parse_hill_score),
 }
+
+
+def state_key(name: str) -> str:
+    return f"{name}@{VERSION}"
 
 
 def _chunks(first: date, last: date) -> Iterator[tuple[date, date]]:
@@ -136,13 +155,13 @@ def sync(db: Session, client: Garmin | None = None, today: date | None = None) -
     first_activity = db.scalar(select(func.min(Activity.start_time_local)))
     history_start = first_activity.date() if first_activity else today - timedelta(days=CHUNK_DAYS)
     read = 0
-    for name, (fetch, parse) in SOURCES.items():
-        state = db.get(FitnessSource, name)
+    for name, (fetch, parse, ranged) in SOURCES.items():
+        state = db.get(FitnessSource, state_key(name))
         if state is not None and state.fetched_at > now - timedelta(hours=REFRESH_HOURS):
             continue
         start = max(history_start, state.fetched_through - timedelta(days=OVERLAP_DAYS)) if state else history_start
-        complete = True
-        for first, last in _chunks(start, today):
+        complete, found, empty_answers = True, 0, 0
+        for first, last in _chunks(start, today) if ranged else [(today, today)]:
             client = client or garmin.connect(db)
             try:
                 payload = garmin._optional(lambda: fetch(client, first.isoformat(), last.isoformat()))
@@ -150,12 +169,17 @@ def sync(db: Session, client: Garmin | None = None, today: date | None = None) -
                 log.warning("Fitness %s unavailable for now", name, exc_info=True)
                 complete = False
                 break
+            empty_answers += payload is None  # Garmin answered 400/404
             rows = parse(payload)
             _store(db, rows)
             db.commit()
-            read += len(rows)
+            found += len(rows)
+        read += found
+        # One line per source, so the logs show which one comes back empty and why.
+        log.info("Fitness %s from %s: %d values%s", name, start if ranged else "now", found,
+                 f" ({empty_answers} requests refused or not found)" if empty_answers else "")
         if complete:
-            state = state or FitnessSource(source=name)
+            state = state or FitnessSource(source=state_key(name))
             state.fetched_through, state.fetched_at = today, now
             db.add(state)
             db.commit()

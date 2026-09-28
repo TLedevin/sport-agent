@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 os.environ.update(
     DATABASE_URL="sqlite://",  # in-memory
@@ -21,6 +21,7 @@ db_module.engine = db_module.create_engine(
     "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
 )
 db_module.SessionLocal.configure(bind=db_module.engine)
+db_module._ensure_schema()  # tests that use the database directly may run before any request
 
 from app import garmin, routes  # noqa: E402
 from app.main import app  # noqa: E402
@@ -122,7 +123,9 @@ class FakeGarmin:
     def get_max_metrics_range(self, start: str, end: str):
         return self._fitness("max_metrics", start, end)
 
-    def get_race_predictions(self, startdate: str, enddate: str, _type: str):
+    def get_race_predictions(self, startdate: str | None = None, enddate: str | None = None, _type: str | None = None):
+        if _type is None:  # no arguments: the current prediction
+            return self._fitness("race_predictions_latest", "-", "-")
         assert _type == "daily"
         return self._fitness("race_predictions", startdate, enddate)
 
@@ -530,6 +533,7 @@ def test_fitness_history_then_recent_weeks_only(auth, monkeypatch):
     }
     monkeypatch.setattr(garmin, "connect", lambda db: fake)
     with db_module.SessionLocal() as db:
+        garmin.sync(db, FakeGarmin([activity(13001)]))  # history starts at the first activity
         db.query(FitnessValue).delete()
         db.query(FitnessSource).delete()
         db.commit()
@@ -542,7 +546,7 @@ def test_fitness_history_then_recent_weeks_only(auth, monkeypatch):
             f"max_metrics {first_day} {first_day + timedelta(days=363)}",
             f"max_metrics {first_day + timedelta(days=364)} {first_day + timedelta(days=500)}",
         ]
-        assert len(fake.fitness_calls) == 8  # 4 sources x 2 chunks, the missing one included
+        assert len(fake.fitness_calls) == 9  # 4 ranged sources x 2 chunks, the missing one included, + latest
 
         # Straight after: nothing asked again.
         fake.fitness_calls.clear()
@@ -555,7 +559,7 @@ def test_fitness_history_then_recent_weeks_only(auth, monkeypatch):
         db.commit()
         fitness.sync(db, today=first_day + timedelta(days=501))
         assert f"race_predictions {first_day + timedelta(days=486)} {first_day + timedelta(days=501)}" in fake.fitness_calls
-        assert len(fake.fitness_calls) == 4
+        assert len(fake.fitness_calls) == 5
 
         # A failure worth retrying doesn't move that source forward.
         fake.fitness_calls.clear()
@@ -564,8 +568,9 @@ def test_fitness_history_then_recent_weeks_only(auth, monkeypatch):
             state.fetched_at -= timedelta(hours=7)
         db.commit()
         fitness.sync(db, today=first_day + timedelta(days=502))
-        assert db.get(FitnessSource, "max_metrics").fetched_through == first_day + timedelta(days=501)
-        assert db.get(FitnessSource, "race_predictions").fetched_through == first_day + timedelta(days=502)
+        state = lambda name: db.get(FitnessSource, fitness.state_key(name))  # noqa: E731
+        assert state("max_metrics").fetched_through == first_day + timedelta(days=501)
+        assert state("race_predictions").fetched_through == first_day + timedelta(days=502)
 
     body = client.get("/api/fitness", headers=auth).json()
     assert body["checked"] is True
@@ -590,4 +595,45 @@ def test_fitness_waits_for_the_rate_limit(auth, monkeypatch):
         db.commit()
         with pytest.raises(GarminConnectTooManyRequestsError):
             fitness.sync(db)
-        assert db.get(FitnessSource, "max_metrics") is None  # retried in full next time
+        assert db.get(FitnessSource, fitness.state_key("max_metrics")) is None  # retried in full next time
+
+
+def test_latest_race_prediction_fills_in_when_the_history_is_empty(auth, monkeypatch):
+    from app import fitness
+    from app.models import FitnessSource, FitnessValue
+
+    fake = FakeGarmin([])
+    fake.fitness = {
+        "race_predictions": [],  # the daily history has nothing
+        "race_predictions_latest": {"userId": 1, "calendarDate": "2026-09-27", "time5K": 1275, "time10K": 2660,
+                                    "timeHalfMarathon": 5930, "timeMarathon": 12700},
+    }
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    with db_module.SessionLocal() as db:
+        db.query(FitnessValue).delete()
+        db.query(FitnessSource).delete()
+        db.commit()
+        fitness.sync(db, today=date(2026, 9, 28))
+    assert [c for c in fake.fitness_calls if "latest" in c] == ["race_predictions_latest - -"]  # one call, no range
+    body = client.get("/api/fitness", headers=auth).json()
+    assert body["series"]["race_5k"] == [["2026-09-27", 1275.0]]
+    assert body["series"]["race_marathon"] == [["2026-09-27", 12700.0]]
+
+
+def test_a_new_version_reads_the_whole_history_again(auth, monkeypatch):
+    from app import fitness
+    from app.models import Activity, FitnessSource
+
+    fake = FakeGarmin([])
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    monkeypatch.setattr(fitness, "SOURCES", {"max_metrics": fitness.SOURCES["max_metrics"]})
+    with db_module.SessionLocal() as db:
+        garmin.sync(db, FakeGarmin([activity(13001)]))
+        db.query(FitnessSource).delete()
+        db.commit()
+        first_day = db.scalar(select(func.min(Activity.start_time_local))).date()
+        fitness.sync(db, today=date(2030, 1, 1))
+        fake.fitness_calls.clear()
+        monkeypatch.setattr(fitness, "VERSION", fitness.VERSION + 1)
+        fitness.sync(db, today=date(2030, 1, 1))
+    assert fake.fitness_calls[0].startswith(f"max_metrics {first_day} ")  # from the first activity again
