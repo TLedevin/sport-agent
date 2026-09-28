@@ -1277,6 +1277,44 @@ a.button {
   color: var(--text-primary);
 }
 
+.photo-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.photo-input-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.photo-input-row .button {
+  height: 40px;
+  flex: none;
+}
+
+.photo-pasted {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 40px;
+  padding: 0 4px 0 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--page);
+  font-weight: 550;
+}
+
+@media (max-width: 480px) {
+  .photo-input-row {
+    flex-direction: column;
+  }
+
+  .photo-input-row input {
+    flex: none;
+  }
+}
+
 .photo-preview {
   margin-bottom: 14px;
 }
