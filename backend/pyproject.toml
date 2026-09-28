@@ -12,6 +12,7 @@ dependencies = [
     "garminconnect>=0.3.16,<0.4",
     "curl_cffi>=0.15",
     "httpx>=0.28",
+    "pillow>=11",
 ]
 
 [dependency-groups]

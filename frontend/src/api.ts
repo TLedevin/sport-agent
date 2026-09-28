@@ -143,6 +143,8 @@ export type Gear = {
   total_distance: number;
   total_activities: number;
   last_used: string | null;
+  /** Set when a photo was added in the app; changes with each new photo. */
+  photo_version: string | null;
 };
 
 export class ApiError extends Error {
@@ -171,7 +173,8 @@ export function setToken(token: string | null): void {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+/** Sends an authenticated request; errors become ApiError. */
+async function send(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -188,7 +191,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     if (response.status === 401 && token) window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
     throw new ApiError(response.status, typeof body.detail === "string" ? body.detail : response.statusText);
   }
-  return response.json() as Promise<T>;
+  return response;
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return (await send(path, init)).json() as Promise<T>;
 }
 
 /** The browser's local date (YYYY-MM-DD), so weeks and months follow your calendar. */
@@ -211,6 +218,18 @@ export const api = {
   activityDetails: (activityId: number) => request<ActivityDetails>(`/api/activities/${activityId}/details`),
   track: (activityId: number) => request<Track>(`/api/activities/${activityId}/track`),
   gear: () => request<Gear[]>("/api/gear"),
+  /** The photo as a blob: it needs the session header, so an <img> can't load it directly.
+   * The version in the address lets the browser cache each photo for good. */
+  gearPhoto: async (uuid: string, version: string) =>
+    (await send(`/api/gear/${encodeURIComponent(uuid)}/photo?v=${encodeURIComponent(version)}`)).blob(),
+  setGearPhoto: (uuid: string, url: string) =>
+    request<{ photo_version: string }>(`/api/gear/${encodeURIComponent(uuid)}/photo`, {
+      method: "PUT",
+      body: JSON.stringify({ url }),
+    }),
+  deleteGearPhoto: async (uuid: string) => {
+    await send(`/api/gear/${encodeURIComponent(uuid)}/photo`, { method: "DELETE" });
+  },
   map: () => request<MapActivity[]>("/api/map"),
   fitness: () => request<Fitness>("/api/fitness"),
   garminStatus: () => request<GarminStatus>("/api/garmin/status"),

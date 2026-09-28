@@ -150,6 +150,10 @@ input:focus-visible {
   background: transparent;
 }
 
+a.button {
+  text-decoration: none;
+}
+
 .button.icon-only {
   width: 36px;
   padding: 0;
@@ -1168,6 +1172,149 @@ input:focus-visible {
 
 .gear-card.retired {
   opacity: 0.75;
+}
+
+.gear-card {
+  position: relative;
+}
+
+/* No photo yet: the "Add photo" button sits in the corner, beside the title. */
+.gear-photo-add {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+}
+
+.gear-card.no-photo .gear-head {
+  padding-right: 112px;
+}
+
+/* Product shots are mostly on white: show them whole on a white frame, in both themes. */
+.gear-photo {
+  position: relative;
+  margin: -8px -8px 14px;
+  aspect-ratio: 4 / 3;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.gear-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.gear-photo-edit {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+.gear-card.retired .gear-photo img {
+  filter: grayscale(0.6);
+}
+
+.photo-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+}
+
+.photo-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.photo-dialog-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.photo-dialog-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  overflow-wrap: anywhere;
+}
+
+.photo-steps {
+  margin: 0 0 14px;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 0.9rem;
+}
+
+.photo-steps li::marker {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.photo-steps label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 550;
+}
+
+.photo-steps input {
+  width: 100%;
+  font: inherit;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--page);
+  color: var(--text-primary);
+}
+
+.photo-preview {
+  margin-bottom: 14px;
+}
+
+.photo-preview img {
+  display: block;
+  max-width: 100%;
+  max-height: 220px;
+  margin: 0 auto;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.photo-preview p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.photo-dialog .form-error {
+  margin-bottom: 14px;
+}
+
+.photo-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.photo-dialog-actions .spacer {
+  flex: 1;
+}
+
+.button.danger {
+  color: var(--danger-text);
 }
 
 .gear-head {

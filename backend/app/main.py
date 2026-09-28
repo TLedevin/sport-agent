@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from garminconnect import GarminConnectAuthenticationError, GarminConnectTooManyRequestsError
@@ -13,11 +13,11 @@ from pydantic import BaseModel
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
-from . import dashboard, fitness, garmin, routes
+from . import dashboard, fitness, garmin, photos, routes
 from .auth import check_password, create_session, require_session
 from .config import get_settings
 from .db import SessionLocal, get_db, wake_database
-from .models import Activity, ActivityGear, ActivityRoute, FitnessSource, FitnessValue, GarminAuth, Gear
+from .models import Activity, ActivityGear, ActivityRoute, FitnessSource, FitnessValue, GarminAuth, Gear, GearPhoto
 from .sports import FAMILIES, sport_family
 
 logging.basicConfig(level=logging.INFO)
@@ -304,6 +304,7 @@ def list_gear(db: Session = Depends(get_db)) -> list[dict]:
             .group_by(ActivityGear.gear_uuid)
         ).all()
     )
+    photo_dates = dict(db.execute(select(GearPhoto.gear_uuid, GearPhoto.updated_at)).all())  # not the images
     items = sorted(db.scalars(select(Gear)), key=lambda g: g.date_begin or datetime.min, reverse=True)
     items.sort(key=lambda g: g.status != "active")  # stable: keeps newest first within each group
     return [
@@ -319,9 +320,51 @@ def list_gear(db: Session = Depends(get_db)) -> list[dict]:
             "total_distance": g.total_distance,
             "total_activities": g.total_activities,
             "last_used": _iso_date(last_used.get(g.uuid)),
+            # Changes when the photo does: part of the photo's address, so browsers cache it safely.
+            "photo_version": _iso_utc(photo_dates.get(g.uuid)),
         }
         for g in items
     ]
+
+
+def _get_gear(db: Session, uuid: str) -> Gear:
+    gear = db.get(Gear, uuid)
+    if gear is None:
+        raise HTTPException(404, "Gear not found")
+    return gear
+
+
+class PhotoRequest(BaseModel):
+    url: str
+
+
+@app.put("/api/gear/{uuid}/photo", dependencies=authed)
+def put_gear_photo(uuid: str, body: PhotoRequest, db: Session = Depends(get_db)) -> dict:
+    """Downloads the image at `url` (or decodes a data: URL), shrinks it and keeps it."""
+    _get_gear(db, uuid)
+    try:
+        photo = photos.save(db, uuid, body.url)
+    except photos.PhotoError as err:
+        raise HTTPException(422, str(err))
+    return {"photo_version": _iso_utc(photo.updated_at)}
+
+
+@app.get("/api/gear/{uuid}/photo", dependencies=authed)
+def get_gear_photo(uuid: str, db: Session = Depends(get_db)) -> Response:
+    photo = db.get(GearPhoto, uuid)
+    if photo is None:
+        raise HTTPException(404, "No photo")
+    # The page asks with ?v=<photo_version>: a new photo gets a new address, so caching is safe.
+    return Response(photo.image, media_type=photo.content_type,
+                    headers={"Cache-Control": "private, max-age=31536000, immutable"})
+
+
+@app.delete("/api/gear/{uuid}/photo", dependencies=authed, status_code=204)
+def delete_gear_photo(uuid: str, db: Session = Depends(get_db)) -> None:
+    photo = db.get(GearPhoto, uuid)
+    if photo is not None:
+        db.delete(photo)
+        db.commit()
 
 
 @app.get("/api/garmin/status", dependencies=authed)
