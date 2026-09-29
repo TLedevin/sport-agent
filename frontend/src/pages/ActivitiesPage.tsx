@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ArrowUpDown, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Trophy, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { api, ApiError, photoSrc, type Activity, type ActivityQuery, type Family, type SortField } from "../api";
@@ -205,7 +205,20 @@ export default function ActivitiesPage() {
                           <Link to={`/activities/${a.id}`} className="activity-name" onClick={(e) => e.stopPropagation()}>
                             {a.name || sportLabel(a.sport_type)}
                           </Link>
-                          <div className="activity-sport">{sportLabel(a.sport_type)}</div>
+                          <div className="activity-sport">
+                            {sportLabel(a.sport_type)}
+                            {a.race_result ? (
+                              <span className="race-chip" title="Race result">
+                                <Trophy size={12} aria-hidden />
+                                {[
+                                  a.race_result.official_time && clock(a.race_result.official_time),
+                                  a.race_result.overall_rank && `#${a.race_result.overall_rank}`,
+                                ].filter(Boolean).join(" · ") || "Race"}
+                              </span>
+                            ) : a.is_race ? (
+                              <span className="race-chip muted-chip"><Trophy size={12} aria-hidden /> Race</span>
+                            ) : null}
+                          </div>
                         </div>
                         {a.photos.length > 0 && (
                           <span className="row-photo" title={`${a.photos.length} ${a.photos.length === 1 ? "photo" : "photos"}`}>

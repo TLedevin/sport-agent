@@ -39,12 +39,21 @@ import {
   type GroupId,
   type Stat,
 } from "../activityData";
-import { api, ApiError, type ActivityDetails, type ActivityPageData, type GarminFields, type Photo } from "../api";
+import {
+  api,
+  ApiError,
+  type ActivityDetails,
+  type ActivityPageData,
+  type GarminFields,
+  type Photo,
+  type RaceResult,
+} from "../api";
 import ActivityCharts from "../components/ActivityCharts";
 import ActivityMap from "../components/ActivityMap";
 import CardSparkline from "../components/CardSparkline";
 import PhotoGallery from "../components/PhotoGallery";
 import PhotoPicker from "../components/PhotoPicker";
+import RaceResultSection from "../components/RaceResult";
 import { activityDate, clock, hours, km, meters, paceOrSpeed, paceOrSpeedLabel, sportLabel } from "../format";
 import { SportBadge } from "../sports";
 import { errorNotice, useSync } from "../sync";
@@ -375,15 +384,22 @@ export default function ActivityDetailPage() {
   const [activity, setActivity] = useState<ActivityPageData | null>(null);
   const [missing, setMissing] = useState(false);
   const [details, setDetails] = useState<DetailsState>({ status: "loading" });
+  const [race, setRace] = useState<RaceResult | null>(null);
+  const [editingRace, setEditingRace] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setActivity(null);
     setMissing(false);
     setDetails({ status: "loading" });
+    setEditingRace(false);
     api
       .activity(activityId)
-      .then((a) => !cancelled && setActivity(a))
+      .then((a) => {
+        if (cancelled) return;
+        setActivity(a);
+        setRace(a.race_result);
+      })
       .catch((err) => {
         if (cancelled) return;
         if (err instanceof ApiError && err.status === 404) setMissing(true);
@@ -444,6 +460,11 @@ export default function ActivityDetailPage() {
               )}
             </p>
           </div>
+          {!activity.is_race && !race && !editingRace && (
+            <button type="button" className="button ghost small detail-race-button" onClick={() => setEditingRace(true)}>
+              <Trophy size={14} aria-hidden /> Add race result
+            </button>
+          )}
           {activity.gear.length > 0 && (
             <p className="detail-gear">
               {activity.gear.map((g) => (
@@ -465,6 +486,20 @@ export default function ActivityDetailPage() {
           )}
         </div>
       </div>
+
+      {(activity.is_race || race || editingRace) && (
+        <RaceResultSection
+          activity={activity}
+          result={race}
+          editing={editingRace}
+          onEdit={() => setEditingRace(true)}
+          onCancel={() => setEditingRace(false)}
+          onDone={(saved) => {
+            setRace(saved);
+            setEditingRace(false);
+          }}
+        />
+      )}
 
       <Photos key={activity.id} activity={activity} />
 

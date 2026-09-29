@@ -17,7 +17,7 @@ from . import dashboard, fitness, garmin, photos, routes
 from .auth import check_password, create_session, require_session
 from .config import get_settings
 from .db import SessionLocal, get_db, wake_database
-from .models import Activity, ActivityGear, ActivityPhoto, ActivityRoute, FitnessSource, FitnessValue, GarminAuth, Gear, GearPhoto
+from .models import Activity, ActivityGear, ActivityPhoto, ActivityRoute, RaceResult, FitnessSource, FitnessValue, GarminAuth, Gear, GearPhoto
 from .sports import FAMILIES, sport_family
 
 logging.basicConfig(level=logging.INFO)
@@ -109,7 +109,23 @@ def _photos_by_activity(db: Session, activity_ids: list[int]) -> dict[int, list[
     return found
 
 
-def _activity_json(a: Activity, photos: list[dict] | None = None) -> dict:
+RACE_FIELDS = (
+    "official_time", "overall_rank", "overall_total", "gender", "gender_rank", "gender_total",
+    "category", "category_rank", "category_total",
+)
+
+
+def _race_json(r: RaceResult | None) -> dict | None:
+    return {f: getattr(r, f) for f in RACE_FIELDS} if r else None
+
+
+def _race_results(db: Session, activity_ids: list[int]) -> dict[int, dict]:
+    if not activity_ids:
+        return {}
+    return {r.activity_id: _race_json(r) for r in db.scalars(select(RaceResult).where(RaceResult.activity_id.in_(activity_ids)))}
+
+
+def _activity_json(a: Activity, photos: list[dict] | None = None, race: dict | None = None) -> dict:
     return {
         "id": a.id,
         "name": a.name,
@@ -128,6 +144,9 @@ def _activity_json(a: Activity, photos: list[dict] | None = None) -> dict:
         "calories": a.calories,
         "has_track": bool(a.raw.get("hasPolyline")),
         "photos": photos or [],
+        # Tagged as a race in Garmin Connect (its "Race" event type).
+        "is_race": ((a.raw.get("eventType") or {}).get("typeKey") == "race"),
+        "race_result": race,
     }
 
 
@@ -189,8 +208,9 @@ def list_activities(
     ).all()  # read every row now: SQL Server rejects the count below while results are pending
     total = db.scalar(select(func.count()).select_from(Activity).where(*filters))
     photos_of = _photos_by_activity(db, [a.id for a in rows])
+    races = _race_results(db, [a.id for a in rows])
     return {
-        "items": [_activity_json(a, photos_of.get(a.id)) for a in rows],
+        "items": [_activity_json(a, photos_of.get(a.id), races.get(a.id)) for a in rows],
         "total": total,
         "families": [f for f in FAMILIES if f in types_by_family],
     }
@@ -213,7 +233,9 @@ def get_activity(activity_id: int, db: Session = Depends(get_db)) -> dict:
         .where(ActivityGear.activity_id == activity_id)
     ).all()
     return {
-        **_activity_json(activity, _photos_by_activity(db, [activity.id]).get(activity.id)),
+        **_activity_json(activity, _photos_by_activity(db, [activity.id]).get(activity.id),
+                         _race_json(db.get(RaceResult, activity.id))),
+        "race_defaults": _race_defaults(db),
         "raw": activity.raw,
         "gear": [{"uuid": g.uuid, "name": g.name, "gear_type": g.gear_type} for g in gear],
     }
@@ -413,6 +435,72 @@ def delete_gear_photo(uuid: str, db: Session = Depends(get_db)) -> None:
     photo = db.get(GearPhoto, uuid)
     if photo is not None:
         db.delete(photo)
+        db.commit()
+
+
+# --- Race results --------------------------------------------------------------------------
+
+
+def _race_defaults(db: Session) -> dict:
+    """Sex and category of the latest result entered, to prefill the next one."""
+    latest = db.scalars(select(RaceResult).order_by(RaceResult.updated_at.desc()).limit(1)).first()
+    return {"gender": latest.gender, "category": latest.category} if latest else {"gender": None, "category": None}
+
+
+class RaceResultRequest(BaseModel):
+    official_time: float | None = None  # seconds
+    overall_rank: int | None = None
+    overall_total: int | None = None
+    gender: Literal["men", "women"] | None = None
+    gender_rank: int | None = None
+    gender_total: int | None = None
+    category: str | None = None
+    category_rank: int | None = None
+    category_total: int | None = None
+
+
+def _check_race(body: RaceResultRequest) -> str | None:
+    """The first problem with a result, in words the form can show; None when it's fine."""
+    if body.category is not None and len(body.category.strip()) > 32:
+        return "The category is too long (32 characters at most)."
+    values = body.model_dump()
+    if all(v is None or v == "" for v in values.values()):
+        return "Enter at least your time or a ranking."
+    if body.official_time is not None and not 0 < body.official_time < 14 * 86400:
+        return "The time doesn't look right."
+    for name, label in (("overall", "overall"), ("gender", "sex"), ("category", "category")):
+        rank, total = values[f"{name}_rank"], values[f"{name}_total"]
+        if any(v is not None and v < 1 for v in (rank, total)):
+            return f"The {label} ranking must be 1 or more."
+        if rank is not None and total is not None and rank > total:
+            return f"Your {label} rank can't be higher than the number of finishers."
+    if (body.gender_rank or body.gender_total) and not body.gender:
+        return "Choose men or women for the ranking by sex."
+    if (body.category_rank or body.category_total) and not (body.category or "").strip():
+        return "Choose your category for the ranking by category."
+    return None
+
+
+@app.put("/api/activities/{activity_id}/race-result", dependencies=authed)
+def put_race_result(activity_id: int, body: RaceResultRequest, db: Session = Depends(get_db)) -> dict:
+    _get_activity(db, activity_id)
+    if problem := _check_race(body):
+        raise HTTPException(422, problem)
+    result = db.get(RaceResult, activity_id) or RaceResult(activity_id=activity_id)
+    for field, value in body.model_dump().items():
+        setattr(result, field, value)
+    result.category = (body.category or "").strip() or None
+    result.updated_at = datetime.now(UTC).replace(tzinfo=None)
+    db.add(result)
+    db.commit()
+    return _race_json(result)
+
+
+@app.delete("/api/activities/{activity_id}/race-result", dependencies=authed, status_code=204)
+def delete_race_result(activity_id: int, db: Session = Depends(get_db)) -> None:
+    result = db.get(RaceResult, activity_id)
+    if result is not None:
+        db.delete(result)
         db.commit()
 
 

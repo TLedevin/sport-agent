@@ -96,6 +96,24 @@ class ActivityPhoto(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime)
 
 
+class RaceResult(Base):
+    """Your official result when an activity was a race: real time and rankings, typed in the app."""
+
+    __tablename__ = "race_results"
+
+    activity_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    official_time: Mapped[float | None] = mapped_column(Float)  # seconds, the organiser's time
+    overall_rank: Mapped[int | None] = mapped_column(Integer)  # "scratch"
+    overall_total: Mapped[int | None] = mapped_column(Integer)  # finishers, when known
+    gender: Mapped[str | None] = mapped_column(String(8))  # men / women
+    gender_rank: Mapped[int | None] = mapped_column(Integer)
+    gender_total: Mapped[int | None] = mapped_column(Integer)
+    category: Mapped[str | None] = mapped_column(Unicode(32))  # e.g. M1, SE
+    category_rank: Mapped[int | None] = mapped_column(Integer)
+    category_total: Mapped[int | None] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
+
+
 class GearPhoto(Base):
     """A photo of a piece of gear, chosen in the app (Garmin has none). Stored shrunk (see photos.py)."""
 
