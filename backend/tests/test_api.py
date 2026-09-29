@@ -208,7 +208,8 @@ def test_full_then_incremental_sync(auth, monkeypatch):
     assert rows[0]["sport_family"] == "running"
 
     dash = client.get("/api/dashboard?today=2026-02-20", headers=auth).json()
-    assert set(dash) == {"today", "periods", "evolution", "breakdown", "records", "last_activity", "periods_by_family"}
+    assert set(dash) == {"today", "periods", "evolution", "breakdown", "records", "last_activity", "periods_by_family",
+                         "recent_photos"}
     assert dash["last_activity"]["name"] == "Morning run"
     assert dash["today"] == "2026-02-20"
     assert len(dash["evolution"]["3m"][0]["buckets"]) == 13
@@ -682,3 +683,59 @@ def test_gear_photo_lifecycle(auth, monkeypatch):
     from app.models import GearPhoto
     with db_module.SessionLocal() as db:
         assert db.get(GearPhoto, "photo-pair") is None
+
+
+def test_activity_photos(auth, monkeypatch):
+    import base64
+    from io import BytesIO
+
+    from PIL import Image
+
+    fake = FakeGarmin([activity(14002, "Summit day"), activity(14001, "Easy run")])
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    monkeypatch.setattr(garmin, "BACKFILL_BATCH", 0)
+    client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
+    client.post("/api/sync", headers=auth)
+
+    def data_url(width: int, height: int, color: str) -> str:
+        out = BytesIO()
+        Image.new("RGB", (width, height), color).save(out, "JPEG")
+        return "data:image/jpeg;base64," + base64.b64encode(out.getvalue()).decode()
+
+    # Add two photos to one activity, one to the other.
+    first = client.post("/api/activities/14002/photos", json={"url": data_url(4000, 3000, "teal")}, headers=auth)
+    assert first.status_code == 201
+    photo = first.json()
+    assert (photo["width"], photo["height"]) == (1600, 1200)
+    client.post("/api/activities/14002/photos", json={"url": data_url(900, 1600, "navy")}, headers=auth)
+    client.post("/api/activities/14001/photos", json={"url": data_url(800, 600, "olive")}, headers=auth)
+    assert client.post("/api/activities/999/photos", json={"url": data_url(10, 10, "red")}, headers=auth).status_code == 404
+    bad = client.post("/api/activities/14002/photos", json={"url": "ftp://x"}, headers=auth)
+    assert bad.status_code == 422
+
+    # The images: signed addresses, no session needed; a wrong signature or size gets nothing.
+    full = client.get(photo["url"])
+    assert full.headers["content-type"] == "image/webp" and "immutable" in full.headers["cache-control"]
+    assert Image.open(BytesIO(full.content)).size == (1600, 1200)
+    assert Image.open(BytesIO(client.get(photo["thumb_url"]).content)).size == (480, 360)
+    assert client.get(photo["url"].replace("sig=", "sig=0")).status_code == 404
+    assert client.get(f"/api/photos/{photo['id']}/huge?sig=x").status_code == 404
+    other_sig = photo["thumb_url"].split("sig=")[1]
+    assert client.get(f"/api/photos/{photo['id']}/full?sig={other_sig}").status_code == 404  # tied to its size
+
+    # Where photos show: the activity, the list, the dashboard, the Photos page.
+    assert [p["id"] for p in client.get("/api/activities/14002", headers=auth).json()["photos"]][0] == photo["id"]
+    items = {a["id"]: a for a in client.get("/api/activities?date_from=2027-01-01&date_to=2027-12-31", headers=auth).json()["items"]}
+    assert len(items[14002]["photos"]) == 2 and len(items[14001]["photos"]) == 1
+    recent = client.get("/api/dashboard", headers=auth).json()["recent_photos"]
+    assert [r["activity_name"] for r in recent[:3]] == ["Summit day", "Summit day", "Easy run"]
+    page = client.get("/api/photos", headers=auth).json()
+    ours = [g for g in page if g["activity"]["id"] in (14001, 14002)]
+    assert [g["activity"]["name"] for g in ours] == ["Summit day", "Easy run"]  # newest activity first
+    assert [len(g["photos"]) for g in ours] == [2, 1]
+    assert client.get("/api/photos").status_code == 401
+
+    # Delete.
+    assert client.delete(f"/api/activity-photos/{photo['id']}", headers=auth).status_code == 204
+    assert len(client.get("/api/activities/14002", headers=auth).json()["photos"]) == 1
+    assert client.get(photo["url"]).status_code == 404

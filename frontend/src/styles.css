@@ -867,6 +867,310 @@ a.button {
   }
 }
 
+/* ---------- Photos ---------- */
+
+.photo-sources {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.photo-sources section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.photo-sources section + section {
+  padding-top: 14px;
+  border-top: 1px solid var(--gridline);
+}
+
+.photo-sources h3 {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.photo-sources p {
+  margin: 0;
+  font-size: 0.86rem;
+}
+
+.photo-sources .photo-input-row {
+  width: 100%;
+}
+
+.photo-input-row input {
+  font: inherit;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--page);
+  color: var(--text-primary);
+}
+
+.photo-pending {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+.photo-pending li {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.photo-pending img,
+.photo-pending-failed {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
+
+.photo-pending-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 3px 6px;
+  font-size: 0.68rem;
+  color: #fff;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+}
+
+.photo-pending .button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--surface);
+}
+
+.photo-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.photo-strip {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0 0 4px;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.photo-strip li {
+  flex: none;
+  width: 132px;
+}
+
+.photo-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface-2);
+  cursor: zoom-in;
+}
+
+.photo-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.2s;
+}
+
+.photo-thumb:hover img {
+  transform: scale(1.04);
+}
+
+.photo-thumb:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+.photo-viewer {
+  width: 100vw;
+  max-width: 100vw;
+  height: 100vh;
+  max-height: 100vh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: #0b0b0b;
+  color: #fff;
+}
+
+.photo-viewer::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.photo-viewer[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.photo-viewer-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+}
+
+.photo-viewer-count {
+  color: rgba(255, 255, 255, 0.7);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.photo-viewer-caption {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.photo-viewer-bar .spacer {
+  flex: 1;
+}
+
+.photo-viewer-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin: 0 12px 16px;
+}
+
+/* The whole photo, as large as the space allows, whatever its shape. */
+.photo-viewer-stage img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.photo-viewer-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  cursor: pointer;
+}
+
+.photo-viewer-nav:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.photo-viewer-nav.prev {
+  left: 14px;
+}
+
+.photo-viewer-nav.next {
+  right: 14px;
+}
+
+.row-photo {
+  flex: none;
+  position: relative;
+  margin-left: auto;
+  width: 44px;
+  height: 34px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.row-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.row-photo span {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.photo-group-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.photo-group-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.photo-group-count {
+  margin-left: auto;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .photo-grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 6px;
+  }
+
+  .photo-viewer-nav {
+    display: none; /* swipe instead */
+  }
+
+  .photo-viewer-bar .button-label {
+    display: none; /* icons only: the bar is narrow */
+  }
+
+  .photo-viewer-bar .button.small {
+    width: 32px;
+    padding: 0;
+  }
+}
+
 /* ---------- Dashboard: chart ---------- */
 
 .dash-row {
@@ -1246,37 +1550,6 @@ a.button {
   overflow-wrap: anywhere;
 }
 
-.photo-steps {
-  margin: 0 0 14px;
-  padding-left: 22px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  font-size: 0.9rem;
-}
-
-.photo-steps li::marker {
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-.photo-steps label {
-  display: block;
-  margin-bottom: 6px;
-  font-weight: 550;
-}
-
-.photo-steps input {
-  width: 100%;
-  font: inherit;
-  height: 40px;
-  padding: 0 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--page);
-  color: var(--text-primary);
-}
-
 .photo-input-row {
   display: flex;
   gap: 8px;
@@ -1292,19 +1565,6 @@ a.button {
   flex: none;
 }
 
-.photo-pasted {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  height: 40px;
-  padding: 0 4px 0 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--page);
-  font-weight: 550;
-}
-
 @media (max-width: 480px) {
   .photo-input-row {
     flex-direction: column;
@@ -1313,27 +1573,6 @@ a.button {
   .photo-input-row input {
     flex: none;
   }
-}
-
-.photo-preview {
-  margin-bottom: 14px;
-}
-
-.photo-preview img {
-  display: block;
-  max-width: 100%;
-  max-height: 220px;
-  margin: 0 auto;
-  border-radius: 10px;
-  background: #fff;
-}
-
-.photo-preview p {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  font-size: 0.85rem;
 }
 
 .photo-dialog .form-error {

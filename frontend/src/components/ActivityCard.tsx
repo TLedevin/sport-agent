@@ -5,6 +5,7 @@ import { api, type Activity } from "../api";
 import { activityDate, calories, clock, km, meters, paceOrSpeed, paceOrSpeedLabel, sportLabel } from "../format";
 import { SportBadge } from "../sports";
 import ActivityMap from "./ActivityMap";
+import PhotoGallery from "./PhotoGallery";
 
 type MapState = { status: "loading" } | { status: "ready"; points: [number, number][] } | { status: "error" };
 
@@ -74,6 +75,8 @@ export default function ActivityCard({ activity, title }: { activity: Activity; 
             </div>
           ))}
         </dl>
+        <PhotoGallery strip label={`Photos of ${activity.name || sportLabel(activity.sport_type)}`}
+          items={activity.photos.map((photo) => ({ photo, caption: activity.name || sportLabel(activity.sport_type) }))} />
       </div>
       {showMap && (
         <div className="activity-card-map">

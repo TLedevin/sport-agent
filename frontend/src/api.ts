@@ -24,7 +24,20 @@ export type Activity = {
   calories: number | null;
   /** Garmin recorded GPS for it: the map can be fetched. */
   has_track: boolean;
+  /** Photos added in the app, in the order they were added. */
+  photos: Photo[];
 };
+
+/** A photo added to an activity. `url` and `thumb_url` are signed paths on the API: an <img> can load them. */
+export type Photo = { id: number; width: number; height: number; url: string; thumb_url: string };
+/** A recent photo on the dashboard, with the activity it belongs to. */
+export type RecentPhoto = Photo & { activity_id: number; activity_name: string; sport_family: Family };
+export type PhotoGroup = { activity: Activity; photos: Photo[] };
+
+/** Full address of a signed photo path. */
+export function photoSrc(path: string): string {
+  return `${API_URL}${path}`;
+}
 
 export type SortField = "date" | "name" | "distance" | "duration" | "speed" | "hr" | "elevation";
 /** Filters and sort for the activity list. Dates are the athlete's local dates; distances in meters. */
@@ -96,6 +109,8 @@ export type Dashboard = {
   breakdown: FamilyTotals[];
   records: PersonalRecord[];
   last_activity: Activity | null;
+  /** Photos of the latest activities that have some. */
+  recent_photos: RecentPhoto[];
 };
 /** An activity on the map of all activities. */
 export type MapActivity = Pick<
@@ -231,6 +246,13 @@ export const api = {
     await send(`/api/gear/${encodeURIComponent(uuid)}/photo`, { method: "DELETE" });
   },
   map: () => request<MapActivity[]>("/api/map"),
+  photos: () => request<PhotoGroup[]>("/api/photos"),
+  /** `url`: an image address, or a data: URL (pasted, or picked on the device). */
+  addActivityPhoto: (activityId: number, url: string) =>
+    request<Photo>(`/api/activities/${activityId}/photos`, { method: "POST", body: JSON.stringify({ url }) }),
+  deleteActivityPhoto: async (photoId: number) => {
+    await send(`/api/activity-photos/${photoId}`, { method: "DELETE" });
+  },
   fitness: () => request<Fitness>("/api/fitness"),
   garminStatus: () => request<GarminStatus>("/api/garmin/status"),
   sync: () => request<SyncResult>("/api/sync", { method: "POST" }),

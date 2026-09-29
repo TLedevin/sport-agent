@@ -1,8 +1,11 @@
-"""Gear photos: the address of an image found online (e.g. on Google Images) is downloaded once,
-shrunk and stored in the database, so the photo keeps showing even if the site removes it."""
+"""Photos of gear and activities. An image comes as an address found online (downloaded once),
+or as a data: URL (pasted, or picked on the device); it's shrunk and stored in the database, so
+it keeps showing even if the site removes it."""
 
 import base64
 import binascii
+import hashlib
+import hmac
 import ipaddress
 import socket
 from datetime import UTC, datetime
@@ -13,11 +16,16 @@ import httpx
 from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy.orm import Session
 
-from .models import GearPhoto
+from .config import get_settings
+from .models import ActivityPhoto, GearPhoto
 
 MAX_DOWNLOAD = 10 * 1024 * 1024  # bytes
-MAX_SIDE = 640  # px: sharp on a card, even on a high-density screen
+MAX_SIDE = 640  # px, gear photos: sharp on a card, even on a high-density screen
 QUALITY = 80
+PHOTO_SIDE = 1600  # px, activity photos: full screen on a laptop
+PHOTO_QUALITY = 82
+THUMB_SIDE = 480  # px, activity thumbnails: galleries and lists
+THUMB_QUALITY = 76
 MAX_PIXELS = 40_000_000  # refuse "decompression bombs" before decoding them
 TIMEOUT = 10  # seconds
 MAX_REDIRECTS = 3
@@ -92,8 +100,8 @@ def download(url: str) -> bytes:
     raise PhotoError("This address redirects too many times.")
 
 
-def shrink(data: bytes) -> bytes:
-    """Any common image format -> WebP, at most MAX_SIDE px, upright, on white if transparent."""
+def _open(data: bytes) -> Image.Image:
+    """Any common image format, upright, on white if transparent."""
     Image.MAX_IMAGE_PIXELS = MAX_PIXELS
     try:
         image = Image.open(BytesIO(data))
@@ -108,10 +116,21 @@ def shrink(data: bytes) -> bytes:
         image = background
     else:
         image = image.convert("RGB")
-    image.thumbnail((MAX_SIDE, MAX_SIDE))
+    return image
+
+
+def _webp(image: Image.Image, side: int, quality: int) -> tuple[bytes, int, int]:
+    """At most `side` px on the longest edge, as WebP. Returns (bytes, width, height)."""
+    image = image.copy()
+    image.thumbnail((side, side))
     out = BytesIO()
-    image.save(out, "WEBP", quality=QUALITY, method=6)
-    return out.getvalue()
+    image.save(out, "WEBP", quality=quality, method=6)
+    return out.getvalue(), image.width, image.height
+
+
+def shrink(data: bytes) -> bytes:
+    """Any common image format -> WebP, at most MAX_SIDE px, upright, on white if transparent."""
+    return _webp(_open(data), MAX_SIDE, QUALITY)[0]
 
 
 def save(db: Session, gear_uuid: str, url: str) -> GearPhoto:
@@ -124,3 +143,42 @@ def save(db: Session, gear_uuid: str, url: str) -> GearPhoto:
     db.add(photo)
     db.commit()
     return photo
+
+
+def _source(url: str) -> str | None:
+    return None if url.strip().startswith("data:") else url.strip()[:2000]
+
+
+def add_activity_photo(db: Session, activity_id: int, url: str) -> ActivityPhoto:
+    """Stores the image in two sizes: full (for the viewer) and a thumbnail (for galleries)."""
+    image = _open(download(url))
+    full, width, height = _webp(image, PHOTO_SIDE, PHOTO_QUALITY)
+    thumb, _, _ = _webp(image, THUMB_SIDE, THUMB_QUALITY)
+    photo = ActivityPhoto(
+        activity_id=activity_id, image=full, thumb=thumb, content_type="image/webp", width=width, height=height,
+        source_url=_source(url), created_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+    db.add(photo)
+    db.commit()
+    return photo
+
+
+# --- Signed photo addresses ----------------------------------------------------------------
+# Galleries show many photos: plain <img> tags load them lazily and the browser caches them,
+# but an <img> can't send the session header. So each address carries a signature made with
+# the app's secret instead: unguessable, and tied to one photo and size.
+
+SIZES = ("full", "thumb")
+
+
+def _signature(photo_id: int, size: str) -> str:
+    key = get_settings().session_secret.encode()
+    return hmac.new(key, f"activity-photo:{photo_id}:{size}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def signed_url(photo_id: int, size: str) -> str:
+    return f"/api/photos/{photo_id}/{size}?sig={_signature(photo_id, size)}"
+
+
+def valid_signature(photo_id: int, size: str, sig: str) -> bool:
+    return size in SIZES and hmac.compare_digest(_signature(photo_id, size), sig)

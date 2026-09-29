@@ -17,7 +17,7 @@ from . import dashboard, fitness, garmin, photos, routes
 from .auth import check_password, create_session, require_session
 from .config import get_settings
 from .db import SessionLocal, get_db, wake_database
-from .models import Activity, ActivityGear, ActivityRoute, FitnessSource, FitnessValue, GarminAuth, Gear, GearPhoto
+from .models import Activity, ActivityGear, ActivityPhoto, ActivityRoute, FitnessSource, FitnessValue, GarminAuth, Gear, GearPhoto
 from .sports import FAMILIES, sport_family
 
 logging.basicConfig(level=logging.INFO)
@@ -81,7 +81,35 @@ def login(body: LoginRequest) -> dict:
 # --- Authenticated ------------------------------------------------------------
 
 
-def _activity_json(a: Activity) -> dict:
+def _photo_json(p) -> dict:
+    """A photo's size and signed addresses (see photos.py). `p` needs id, width and height."""
+    return {
+        "id": p.id,
+        "width": p.width,
+        "height": p.height,
+        "url": photos.signed_url(p.id, "full"),
+        "thumb_url": photos.signed_url(p.id, "thumb"),
+    }
+
+
+# The photo columns worth reading for lists: never the images themselves.
+PHOTO_META = (ActivityPhoto.id, ActivityPhoto.activity_id, ActivityPhoto.width, ActivityPhoto.height)
+
+
+def _photos_by_activity(db: Session, activity_ids: list[int]) -> dict[int, list[dict]]:
+    if not activity_ids:
+        return {}
+    found: dict[int, list[dict]] = {}
+    for p in db.execute(
+        select(*PHOTO_META)
+        .where(ActivityPhoto.activity_id.in_(activity_ids))
+        .order_by(ActivityPhoto.created_at, ActivityPhoto.id)
+    ):
+        found.setdefault(p.activity_id, []).append(_photo_json(p))
+    return found
+
+
+def _activity_json(a: Activity, photos: list[dict] | None = None) -> dict:
     return {
         "id": a.id,
         "name": a.name,
@@ -99,6 +127,7 @@ def _activity_json(a: Activity) -> dict:
         "max_hr": a.max_hr,
         "calories": a.calories,
         "has_track": bool(a.raw.get("hasPolyline")),
+        "photos": photos or [],
     }
 
 
@@ -159,8 +188,9 @@ def list_activities(
         .limit(min(limit, 200))
     ).all()  # read every row now: SQL Server rejects the count below while results are pending
     total = db.scalar(select(func.count()).select_from(Activity).where(*filters))
+    photos_of = _photos_by_activity(db, [a.id for a in rows])
     return {
-        "items": [_activity_json(a) for a in rows],
+        "items": [_activity_json(a, photos_of.get(a.id)) for a in rows],
         "total": total,
         "families": [f for f in FAMILIES if f in types_by_family],
     }
@@ -183,7 +213,7 @@ def get_activity(activity_id: int, db: Session = Depends(get_db)) -> dict:
         .where(ActivityGear.activity_id == activity_id)
     ).all()
     return {
-        **_activity_json(activity),
+        **_activity_json(activity, _photos_by_activity(db, [activity.id]).get(activity.id)),
         "raw": activity.raw,
         "gear": [{"uuid": g.uuid, "name": g.name, "gear_type": g.gear_type} for g in gear],
     }
@@ -256,6 +286,24 @@ def get_fitness(db: Session = Depends(get_db)) -> dict:
     return {"series": series, "checked": db.scalar(select(func.count()).select_from(FitnessSource)) > 0}
 
 
+RECENT_PHOTOS = 8
+
+
+def _recent_photos(db: Session) -> list[dict]:
+    """The photos of the latest activities that have some, for the dashboard."""
+    rows = db.execute(
+        select(*PHOTO_META, Activity.name, Activity.sport_type)
+        .join(Activity, Activity.id == ActivityPhoto.activity_id)
+        .order_by(Activity.start_time_utc.desc(), ActivityPhoto.created_at, ActivityPhoto.id)
+        .limit(RECENT_PHOTOS)
+    ).all()
+    return [
+        {**_photo_json(r), "activity_id": r.activity_id, "activity_name": r.name,
+         "sport_family": sport_family(r.sport_type)}
+        for r in rows
+    ]
+
+
 @app.get("/api/dashboard", dependencies=authed)
 def get_dashboard(today: date | None = None, db: Session = Depends(get_db)) -> dict:
     """`today` is the browser's local date, so weeks and months match the athlete's calendar."""
@@ -286,7 +334,8 @@ def get_dashboard(today: date | None = None, db: Session = Depends(get_db)) -> d
     latest = db.scalars(select(Activity).order_by(Activity.start_time_utc.desc()).limit(1)).first()
     return {
         **dashboard.build(rows, today or datetime.now(UTC).date()),
-        "last_activity": _activity_json(latest) if latest else None,
+        "last_activity": _activity_json(latest, _photos_by_activity(db, [latest.id]).get(latest.id)) if latest else None,
+        "recent_photos": _recent_photos(db),
     }
 
 
@@ -365,6 +414,57 @@ def delete_gear_photo(uuid: str, db: Session = Depends(get_db)) -> None:
     if photo is not None:
         db.delete(photo)
         db.commit()
+
+
+# --- Activity photos -------------------------------------------------------------------------
+
+
+class ActivityPhotoRequest(BaseModel):
+    url: str  # an image address, or a data: URL (a pasted image, or one picked on the device)
+
+
+@app.post("/api/activities/{activity_id}/photos", dependencies=authed, status_code=201)
+def add_activity_photo(activity_id: int, body: ActivityPhotoRequest, db: Session = Depends(get_db)) -> dict:
+    _get_activity(db, activity_id)
+    try:
+        photo = photos.add_activity_photo(db, activity_id, body.url)
+    except photos.PhotoError as err:
+        raise HTTPException(422, str(err))
+    return _photo_json(photo)
+
+
+@app.delete("/api/activity-photos/{photo_id}", dependencies=authed, status_code=204)
+def delete_activity_photo(photo_id: int, db: Session = Depends(get_db)) -> None:
+    photo = db.get(ActivityPhoto, photo_id)
+    if photo is not None:
+        db.delete(photo)
+        db.commit()
+
+
+@app.get("/api/photos", dependencies=authed)
+def list_photos(db: Session = Depends(get_db)) -> list[dict]:
+    """Every activity that has photos, newest first, with its photos in the order they were added."""
+    with_photos = select(ActivityPhoto.activity_id)
+    activities = db.scalars(
+        select(Activity).where(Activity.id.in_(with_photos)).order_by(Activity.start_time_utc.desc())
+    ).all()
+    photos_of: dict[int, list[dict]] = {}
+    for p in db.execute(select(*PHOTO_META).order_by(ActivityPhoto.created_at, ActivityPhoto.id)):
+        photos_of.setdefault(p.activity_id, []).append(_photo_json(p))
+    return [{"activity": _activity_json(a, photos_of.get(a.id)), "photos": photos_of.get(a.id, [])} for a in activities]
+
+
+@app.get("/api/photos/{photo_id}/{size}")
+def get_photo(photo_id: int, size: str, sig: str = "", db: Session = Depends(get_db)) -> Response:
+    """The image itself. No session header (it's an <img>): the signature in the address is the key."""
+    if not photos.valid_signature(photo_id, size, sig):
+        raise HTTPException(404, "No photo")
+    column = ActivityPhoto.thumb if size == "thumb" else ActivityPhoto.image
+    row = db.execute(select(column, ActivityPhoto.content_type).where(ActivityPhoto.id == photo_id)).first()
+    if row is None:
+        raise HTTPException(404, "No photo")
+    # A photo never changes (a new one gets a new id), so browsers keep it for good.
+    return Response(row[0], media_type=row[1], headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
 @app.get("/api/garmin/status", dependencies=authed)
