@@ -1,8 +1,11 @@
+import { Images } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Link } from "react-router";
 import { api, ApiError, type Dashboard, type Family } from "../api";
 import ActivityCard from "../components/ActivityCard";
 import EvolutionChart from "../components/EvolutionChart";
 import PeriodTile from "../components/PeriodTile";
+import PhotoGallery from "../components/PhotoGallery";
 import Records from "../components/Records";
 import SportBreakdown from "../components/SportBreakdown";
 import SportFilter from "../components/SportFilter";
@@ -95,6 +98,18 @@ export default function DashboardPage() {
             <PeriodTile label="This year" compareLabel="vs same point last year" {...periods.year} />
           </div>
           {data.last_activity && <ActivityCard activity={data.last_activity} title="Last activity" />}
+          {data.recent_photos.length > 0 && (
+            <section className="card" aria-labelledby="recent-photos-title">
+              <div className="card-head">
+                <h2 id="recent-photos-title">
+                  <Images size={16} className="title-icon" aria-hidden /> Recent photos
+                </h2>
+                <Link to="/photos" className="button ghost small">See all</Link>
+              </div>
+              <PhotoGallery strip label="Recent photos"
+                items={data.recent_photos.map((p) => ({ photo: p, caption: p.activity_name, href: `/activities/${p.activity_id}` }))} />
+            </section>
+          )}
           <div className="dash-row">
             <EvolutionChart evolution={data.evolution} />
             <SportBreakdown breakdown={data.breakdown} year={year} />

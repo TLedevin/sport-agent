@@ -1,7 +1,7 @@
 import { ArrowDown, ArrowUp, ArrowUpDown, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { api, ApiError, type Activity, type ActivityQuery, type Family, type SortField } from "../api";
+import { api, ApiError, photoSrc, type Activity, type ActivityQuery, type Family, type SortField } from "../api";
 import SportFilter from "../components/SportFilter";
 import { activityDate, clock, km, meters, paceOrSpeed, sportLabel } from "../format";
 import { FAMILIES, SportBadge } from "../sports";
@@ -207,6 +207,12 @@ export default function ActivitiesPage() {
                           </Link>
                           <div className="activity-sport">{sportLabel(a.sport_type)}</div>
                         </div>
+                        {a.photos.length > 0 && (
+                          <span className="row-photo" title={`${a.photos.length} ${a.photos.length === 1 ? "photo" : "photos"}`}>
+                            <img src={photoSrc(a.photos[0].thumb_url)} alt="" loading="lazy" />
+                            {a.photos.length > 1 && <span>+{a.photos.length - 1}</span>}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="nowrap muted">{activityDate(a.start_time_local)}</td>

@@ -1,4 +1,4 @@
-import { Backpack, LayoutDashboard, List, LogOut, MapIcon, RefreshCw, TrendingUp, X } from "lucide-react";
+import { Backpack, Images, LayoutDashboard, List, LogOut, MapIcon, RefreshCw, TrendingUp, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import Logo from "./Logo";
 import { NavLink, Outlet, useLocation } from "react-router";
@@ -35,6 +35,9 @@ export default function Layout({ onLogout }: { onLogout: () => void }) {
             </NavLink>
             <NavLink to="/fitness" className="nav-link">
               <TrendingUp size={16} aria-hidden /> Fitness
+            </NavLink>
+            <NavLink to="/photos" className="nav-link">
+              <Images size={16} aria-hidden /> Photos
             </NavLink>
             <NavLink to="/equipment" className="nav-link">
               <Backpack size={16} aria-hidden /> Equipment

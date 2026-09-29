@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   Backpack,
+  Camera,
   Cloud,
   CloudFog,
   CloudLightning,
@@ -12,6 +13,7 @@ import {
   Footprints,
   Gauge,
   HeartPulse,
+  ImagePlus,
   Map as MapIcon,
   MapPin,
   Mountain,
@@ -37,10 +39,12 @@ import {
   type GroupId,
   type Stat,
 } from "../activityData";
-import { api, ApiError, type ActivityDetails, type ActivityPageData, type GarminFields } from "../api";
+import { api, ApiError, type ActivityDetails, type ActivityPageData, type GarminFields, type Photo } from "../api";
 import ActivityCharts from "../components/ActivityCharts";
 import ActivityMap from "../components/ActivityMap";
 import CardSparkline from "../components/CardSparkline";
+import PhotoGallery from "../components/PhotoGallery";
+import PhotoPicker from "../components/PhotoPicker";
 import { activityDate, clock, hours, km, meters, paceOrSpeed, paceOrSpeedLabel, sportLabel } from "../format";
 import { SportBadge } from "../sports";
 import { errorNotice, useSync } from "../sync";
@@ -462,6 +466,8 @@ export default function ActivityDetailPage() {
         </div>
       </div>
 
+      <Photos key={activity.id} activity={activity} />
+
       {details.status === "loading" && (
         <section className="card detail-loading" role="status">
           <div className="loader" aria-hidden />
@@ -520,6 +526,40 @@ export default function ActivityDetailPage() {
         </>
       )}
     </div>
+  );
+}
+
+/** Your photos of the activity, and adding more: from the device, the clipboard or the web. */
+function Photos({ activity }: { activity: ActivityPageData }) {
+  const [photos, setPhotos] = useState<Photo[]>(activity.photos);
+  const [adding, setAdding] = useState(false);
+  const name = activity.name || sportLabel(activity.sport_type);
+  const add = (
+    <button type="button" className="button small" onClick={() => setAdding(true)}>
+      <ImagePlus size={14} aria-hidden /> Add photos
+    </button>
+  );
+  return (
+    <Section title="Photos" icon={Camera} actions={add}
+      sub={photos.length ? undefined : "Add your own photos, or pictures found on the web."}>
+      <PhotoGallery label="Photos of this activity" items={photos.map((photo) => ({ photo, caption: name }))}
+        onDelete={async (photo) => {
+          await api.deleteActivityPhoto(photo.id);
+          setPhotos((list) => list.filter((p) => p.id !== photo.id));
+        }} />
+      {adding && (
+        <PhotoPicker
+          title={`Photos of ${name}`}
+          searchQuery={activity.location_name || name}
+          multiple
+          save={async (source) => {
+            const photo = await api.addActivityPhoto(activity.id, source);
+            setPhotos((list) => [...list, photo]);
+          }}
+          onClose={() => setAdding(false)}
+        />
+      )}
+    </Section>
   );
 }
 

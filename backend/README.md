@@ -53,6 +53,10 @@ Prints, for the last 90 days, the start of each raw Garmin answer (VO2 max, race
 | POST | `/api/sync` | ✓ | Import new Garmin activities (the Refresh button) |
 | PUT | `/api/gear/{uuid}/photo` | ✓ | `{url}` (an image address, or a `data:` link) → downloaded, shrunk to WebP and stored |
 | GET / DELETE | `/api/gear/{uuid}/photo` | ✓ | The stored photo (cached by the browser), or remove it |
+| POST | `/api/activities/{id}/photos` | ✓ | `{url}` (an image address, or a `data:` link: pasted or picked on the device) → stored in two sizes |
+| DELETE | `/api/activity-photos/{photo_id}` | ✓ | Remove a photo |
+| GET | `/api/photos` | ✓ | Every activity with photos, newest first, with its photos |
+| GET | `/api/photos/{photo_id}/{full,thumb}?sig=` | signed | The image itself: the signature in the address replaces the session, so an `<img>` can load it |
 | GET | `/api/garmin/status` | ✓ | Connected? last sync? |
 | PUT | `/api/garmin/tokens` | ✓ | Used by `garmin_login.py` |
 

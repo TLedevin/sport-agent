@@ -80,6 +80,22 @@ class Gear(Base):
     raw: Mapped[dict] = mapped_column(JSON)  # Garmin's gear payload
 
 
+class ActivityPhoto(Base):
+    """A photo added to an activity in the app, in two sizes (see photos.py)."""
+
+    __tablename__ = "activity_photos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    activity_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    image: Mapped[bytes] = mapped_column(LargeBinary)  # at most 1600 px
+    thumb: Mapped[bytes] = mapped_column(LargeBinary)  # at most 480 px
+    content_type: Mapped[str] = mapped_column(String(32))
+    width: Mapped[int] = mapped_column(Integer)  # of the full image, for layouts before it loads
+    height: Mapped[int] = mapped_column(Integer)
+    source_url: Mapped[str | None] = mapped_column(Text)  # where it came from; None when picked or pasted
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+
+
 class GearPhoto(Base):
     """A photo of a piece of gear, chosen in the app (Garmin has none). Stored shrunk (see photos.py)."""
 
