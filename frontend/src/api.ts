@@ -26,6 +26,25 @@ export type Activity = {
   has_track: boolean;
   /** Photos added in the app, in the order they were added. */
   photos: Photo[];
+  /** Tagged as a race in Garmin Connect. */
+  is_race: boolean;
+  /** Your official result, when typed in. */
+  race_result: RaceResult | null;
+};
+
+export type Gender = "men" | "women";
+/** Official time (seconds) and rankings of a race: overall ("scratch"), by sex, by category.
+ * Totals are the number of finishers, when known. */
+export type RaceResult = {
+  official_time: number | null;
+  overall_rank: number | null;
+  overall_total: number | null;
+  gender: Gender | null;
+  gender_rank: number | null;
+  gender_total: number | null;
+  category: string | null;
+  category_rank: number | null;
+  category_total: number | null;
 };
 
 /** A photo added to an activity. `url` and `thumb_url` are signed paths on the API: an <img> can load them. */
@@ -57,6 +76,8 @@ export type ActivityList = { items: Activity[]; total: number; families: Family[
 export type GarminFields = Record<string, unknown>;
 
 export type ActivityPageData = Activity & {
+  /** Sex and category of the latest result entered, to prefill a new one. */
+  race_defaults: { gender: Gender | null; category: string | null };
   raw: GarminFields;
   gear: { uuid: string; name: string; gear_type: string }[];
 };
@@ -247,6 +268,11 @@ export const api = {
   },
   map: () => request<MapActivity[]>("/api/map"),
   photos: () => request<PhotoGroup[]>("/api/photos"),
+  saveRaceResult: (activityId: number, result: RaceResult) =>
+    request<RaceResult>(`/api/activities/${activityId}/race-result`, { method: "PUT", body: JSON.stringify(result) }),
+  deleteRaceResult: async (activityId: number) => {
+    await send(`/api/activities/${activityId}/race-result`, { method: "DELETE" });
+  },
   /** `url`: an image address, or a data: URL (pasted, or picked on the device). */
   addActivityPhoto: (activityId: number, url: string) =>
     request<Photo>(`/api/activities/${activityId}/photos`, { method: "POST", body: JSON.stringify({ url }) }),

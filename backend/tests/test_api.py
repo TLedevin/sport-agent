@@ -739,3 +739,50 @@ def test_activity_photos(auth, monkeypatch):
     assert client.delete(f"/api/activity-photos/{photo['id']}", headers=auth).status_code == 204
     assert len(client.get("/api/activities/14002", headers=auth).json()["photos"]) == 1
     assert client.get(photo["url"]).status_code == 404
+
+
+def test_race_results(auth, monkeypatch):
+    race = {**activity(15002, "Marathon de Lyon"), "eventType": {"typeKey": "race"}}
+    fake = FakeGarmin([race, activity(15001, "Recovery run")])
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    monkeypatch.setattr(garmin, "BACKFILL_BATCH", 0)
+    client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
+    client.post("/api/sync", headers=auth)
+
+    page = client.get("/api/activities/15002", headers=auth).json()
+    assert page["is_race"] is True and page["race_result"] is None
+    assert client.get("/api/activities/15001", headers=auth).json()["is_race"] is False
+
+    url = "/api/activities/15002/race-result"
+    problems = {
+        "Enter at least": {},
+        "can't be higher": {"overall_rank": 900, "overall_total": 812},
+        "must be 1 or more": {"category_rank": 0, "category": "M1"},
+        "Choose men or women": {"gender_rank": 40},
+        "Choose your category": {"category_rank": 12, "category": "  "},
+        "doesn't look right": {"official_time": -5},
+    }
+    for message, body in problems.items():
+        r = client.put(url, json=body, headers=auth)
+        assert r.status_code == 422 and message in r.json()["detail"], (body, r.json())
+    assert client.put(url, json={"gender": "other"}, headers=auth).status_code == 422
+    assert client.put("/api/activities/999/race-result", json={"overall_rank": 1}, headers=auth).status_code == 404
+
+    result = {
+        "official_time": 11845.0, "overall_rank": 45, "overall_total": 812, "gender": "men", "gender_rank": 40,
+        "gender_total": 600, "category": " M1 ", "category_rank": 12, "category_total": None,
+    }
+    saved = client.put(url, json=result, headers=auth)
+    assert saved.status_code == 200 and saved.json()["category"] == "M1"
+    assert client.get("/api/activities/15002", headers=auth).json()["race_result"]["overall_rank"] == 45
+    listed = {a["id"]: a for a in client.get("/api/activities?date_from=2027-01-01&date_to=2027-12-31", headers=auth).json()["items"]}
+    assert listed[15002]["race_result"]["official_time"] == 11845.0 and listed[15001]["race_result"] is None
+
+    # The next result starts from the same sex and category.
+    assert client.get("/api/activities/15001", headers=auth).json()["race_defaults"] == {"gender": "men", "category": "M1"}
+
+    # Updating keeps one result per activity; deleting removes it.
+    client.put(url, json={**result, "official_time": 11800.0}, headers=auth)
+    assert client.get("/api/activities/15002", headers=auth).json()["race_result"]["official_time"] == 11800.0
+    assert client.delete(url, headers=auth).status_code == 204
+    assert client.get("/api/activities/15002", headers=auth).json()["race_result"] is None
