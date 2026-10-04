@@ -76,6 +76,9 @@ export type ActivityList = { items: Activity[]; total: number; families: Family[
 export type GarminFields = Record<string, unknown>;
 
 export type ActivityPageData = Activity & {
+  /** Garmin's own name; `name` is yours when `renamed`. */
+  garmin_name: string;
+  renamed: boolean;
   /** Sex and category of the latest result entered, to prefill a new one. */
   race_defaults: { gender: Gender | null; category: string | null };
   raw: GarminFields;
@@ -268,6 +271,12 @@ export const api = {
   },
   map: () => request<MapActivity[]>("/api/map"),
   photos: () => request<PhotoGroup[]>("/api/photos"),
+  /** Your title for an activity; an empty one goes back to Garmin's name. */
+  renameActivity: (activityId: number, name: string) =>
+    request<{ name: string; garmin_name: string; renamed: boolean }>(`/api/activities/${activityId}/name`, {
+      method: "PUT",
+      body: JSON.stringify({ name }),
+    }),
   saveRaceResult: (activityId: number, result: RaceResult) =>
     request<RaceResult>(`/api/activities/${activityId}/race-result`, { method: "PUT", body: JSON.stringify(result) }),
   deleteRaceResult: async (activityId: number) => {

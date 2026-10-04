@@ -17,7 +17,7 @@ from . import dashboard, fitness, garmin, photos, routes
 from .auth import check_password, create_session, require_session
 from .config import get_settings
 from .db import SessionLocal, get_db, wake_database
-from .models import Activity, ActivityGear, ActivityPhoto, ActivityRoute, RaceResult, FitnessSource, FitnessValue, GarminAuth, Gear, GearPhoto
+from .models import Activity, ActivityGear, ActivityName, ActivityPhoto, ActivityRoute, RaceResult, FitnessSource, FitnessValue, GarminAuth, Gear, GearPhoto
 from .sports import FAMILIES, sport_family
 
 logging.basicConfig(level=logging.INFO)
@@ -236,6 +236,8 @@ def get_activity(activity_id: int, db: Session = Depends(get_db)) -> dict:
         **_activity_json(activity, _photos_by_activity(db, [activity.id]).get(activity.id),
                          _race_json(db.get(RaceResult, activity.id))),
         "race_defaults": _race_defaults(db),
+        "garmin_name": _garmin_name(activity),
+        "renamed": db.get(ActivityName, activity.id) is not None,
         "raw": activity.raw,
         "gear": [{"uuid": g.uuid, "name": g.name, "gear_type": g.gear_type} for g in gear],
     }
@@ -436,6 +438,37 @@ def delete_gear_photo(uuid: str, db: Session = Depends(get_db)) -> None:
     if photo is not None:
         db.delete(photo)
         db.commit()
+
+
+# --- Your title for an activity --------------------------------------------------------------
+
+
+def _garmin_name(a: Activity) -> str:
+    return (a.raw.get("activityName") or "")[:255]
+
+
+class NameRequest(BaseModel):
+    name: str
+
+
+@app.put("/api/activities/{activity_id}/name", dependencies=authed)
+def rename_activity(activity_id: int, body: NameRequest, db: Session = Depends(get_db)) -> dict:
+    """Sets your title. An empty one, or Garmin's own, goes back to Garmin's name."""
+    activity = _get_activity(db, activity_id)
+    name = " ".join(body.name.split())[:255]  # no stray spaces or line breaks
+    garmin_name = _garmin_name(activity)
+    override = db.get(ActivityName, activity_id)
+    if not name or name == garmin_name:
+        if override is not None:
+            db.delete(override)
+        activity.name = garmin_name
+    else:
+        override = override or ActivityName(activity_id=activity_id)
+        override.name, override.updated_at = name, datetime.now(UTC).replace(tzinfo=None)
+        db.add(override)
+        activity.name = name
+    db.commit()
+    return {"name": activity.name, "garmin_name": garmin_name, "renamed": activity.name != garmin_name}
 
 
 # --- Race results --------------------------------------------------------------------------

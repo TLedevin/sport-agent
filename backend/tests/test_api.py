@@ -786,3 +786,31 @@ def test_race_results(auth, monkeypatch):
     assert client.get("/api/activities/15002", headers=auth).json()["race_result"]["official_time"] == 11800.0
     assert client.delete(url, headers=auth).status_code == 204
     assert client.get("/api/activities/15002", headers=auth).json()["race_result"] is None
+
+
+def test_rename_an_activity(auth, monkeypatch):
+    fake = FakeGarmin([activity(16001, "Course à pied")])
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    monkeypatch.setattr(garmin, "BACKFILL_BATCH", 0)
+    client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
+    client.post("/api/sync", headers=auth)
+    page = lambda: client.get("/api/activities/16001", headers=auth).json()  # noqa: E731
+    assert (page()["name"], page()["garmin_name"], page()["renamed"]) == ("Course à pied", "Course à pied", False)
+
+    r = client.put("/api/activities/16001/name", json={"name": "  Semi-marathon\n de Saumur "}, headers=auth)
+    assert r.json() == {"name": "Semi-marathon de Saumur", "garmin_name": "Course à pied", "renamed": True}
+    assert page()["name"] == "Semi-marathon de Saumur" and page()["renamed"] is True
+
+    # The title survives a sync that re-reads the activity from Garmin, and the list sorts by it.
+    fake.activities = [{**activity(16001, "Course à pied"), "distance": 21100.0}]
+    client.post("/api/sync", headers=auth)
+    assert page()["name"] == "Semi-marathon de Saumur" and page()["distance"] == 21100.0
+    listed = client.get("/api/activities?date_from=2027-10-01&date_to=2027-10-31", headers=auth).json()["items"]
+    assert "Semi-marathon de Saumur" in [a["name"] for a in listed]
+
+    # Empty (or Garmin's own name) resets it.
+    r = client.put("/api/activities/16001/name", json={"name": ""}, headers=auth)
+    assert r.json() == {"name": "Course à pied", "garmin_name": "Course à pied", "renamed": False}
+    client.post("/api/sync", headers=auth)
+    assert page()["name"] == "Course à pied"
+    assert client.put("/api/activities/999/name", json={"name": "x"}, headers=auth).status_code == 404

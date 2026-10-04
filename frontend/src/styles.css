@@ -981,13 +981,14 @@ a.button {
 
 .photo-strip li {
   flex: none;
-  width: 132px;
+  width: 140px;
 }
 
 .photo-thumb {
   display: block;
   width: 100%;
-  aspect-ratio: 4 / 3;
+  /* Portrait-friendly: most photos from a phone are taller than wide. */
+  aspect-ratio: 4 / 5;
   padding: 0;
   border: 0;
   border-radius: 10px;
@@ -1000,6 +1001,7 @@ a.button {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center 30%; /* when cropping, keep the upper part: faces, bibs */
   display: block;
   transition: transform 0.2s;
 }
@@ -1948,6 +1950,66 @@ a.button {
 
 .detail-title .page-sub {
   margin: 0;
+}
+
+.title-block h1 {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+/* The pencil stays discreet until the title is pointed at or focused. */
+.title-edit {
+  opacity: 0.45;
+  color: var(--text-secondary);
+}
+
+.title-block:hover .title-edit,
+.title-edit:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .title-edit {
+    opacity: 1;
+  }
+}
+
+.title-original {
+  margin: 2px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.title-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 100%; /* its own row, as wide as the header allows */
+  align-self: stretch;
+  width: 100%;
+  min-width: 0;
+}
+
+.title-form input {
+  flex: 1;
+  width: 0; /* sized by flex, not by its default character count */
+  min-width: 0;
+  height: 44px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--page);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.title-form .form-error {
+  flex-basis: 100%;
 }
 
 @media (max-width: 640px) {
