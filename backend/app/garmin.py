@@ -330,10 +330,11 @@ def fetch_details(activity: Activity, client: Garmin) -> tuple[dict, bool]:
     return data, complete
 
 
-def details(db: Session, activity: Activity, client: Garmin | None = None) -> dict:
-    """Stored details, fetching them from Garmin the first time."""
+def details(db: Session, activity: Activity, client: Garmin | None = None, refresh: bool = False) -> dict:
+    """Stored details, fetching them from Garmin the first time. With refresh, Garmin is asked
+    again; the stored copy is only replaced when the new one is complete."""
     stored = db.get(ActivityDetail, activity.id)
-    if stored is not None and stored.data.get("version") == DETAILS_VERSION:
+    if not refresh and stored is not None and stored.data.get("version") == DETAILS_VERSION:
         return stored.data
     data, complete = fetch_details(activity, client or connect(db))
     if complete:

@@ -394,6 +394,42 @@ def test_activity_details_failures(auth, monkeypatch):
     assert client.get("/api/activities/6002/details", headers=auth).status_code == 429
 
 
+def test_refresh_fetches_details_again_and_keeps_your_edits(auth, monkeypatch):
+    client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
+    fake = FakeGarmin([{**activity(6101, "Marathon"), "hasPolyline": True}])
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    monkeypatch.setattr(garmin, "BACKFILL_BATCH", 0)
+    client.post("/api/sync", headers=auth)
+
+    def not_found():
+        raise GarminConnectNotFound("no samples")
+
+    def flaky():
+        raise RuntimeError("timeout")
+
+    # A first fetch without samples is stored, so the graphs never come back on their own.
+    fake.detail_overrides = {"series": not_found}
+    assert client.get("/api/activities/6101/details", headers=auth).json()["series"] is None
+    client.put("/api/activities/6101/name", json={"name": "My marathon"}, headers=auth)
+    fake.detail_overrides = {}
+    assert client.get("/api/activities/6101/details", headers=auth).json()["series"] is None
+
+    # A temporary failure during a refresh is shown, but the stored copy stays.
+    fake.detail_overrides = {"weather": flaky}
+    assert client.post("/api/activities/6101/details/refresh", headers=auth).json()["weather"] is None
+    fake.detail_overrides = {}
+    assert client.get("/api/activities/6101/details", headers=auth).json()["weather"]["temp"] == 55
+
+    # Refresh: asked again and stored, your title untouched.
+    refreshed = client.post("/api/activities/6101/details/refresh", headers=auth).json()
+    assert refreshed["series"]["metrics"]["directHeartRate"] == [120.0, None]
+    fake.detail_calls.clear()
+    assert client.get("/api/activities/6101/details", headers=auth).json() == refreshed
+    assert fake.detail_calls == []
+    assert client.get("/api/activities/6101", headers=auth).json()["name"] == "My marathon"
+    assert client.post("/api/activities/404404/details/refresh", headers=auth).status_code == 404
+
+
 def test_sync_backfills_details_in_the_background(auth, monkeypatch):
     client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
     runs = [{**activity(i, "Run"), "hasPolyline": True} for i in range(7010, 7000, -1)]

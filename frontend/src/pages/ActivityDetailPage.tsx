@@ -17,6 +17,7 @@ import {
   Map as MapIcon,
   MapPin,
   Mountain,
+  RefreshCw,
   Sun,
   Timer,
   TrendingUp,
@@ -387,6 +388,7 @@ export default function ActivityDetailPage() {
   const [details, setDetails] = useState<DetailsState>({ status: "loading" });
   const [race, setRace] = useState<RaceResult | null>(null);
   const [editingRace, setEditingRace] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -418,6 +420,21 @@ export default function ActivityDetailPage() {
       cancelled = true;
     };
   }, [activityId, setNotice]);
+
+  /** Asks Garmin again for the map, graphs and laps. Your title, race result and photos stay. */
+  function refresh() {
+    setRefreshing(true);
+    api
+      .refreshActivityDetails(activityId)
+      .then((data) => {
+        setDetails({ status: "ready", data });
+        setNotice({ kind: "info", content: "Activity refreshed from Garmin." });
+      })
+      .catch((err) => {
+        if (!(err instanceof ApiError && err.status === 401)) setNotice(errorNotice(err));
+      })
+      .finally(() => setRefreshing(false));
+  }
 
   if (missing) {
     return (
@@ -462,11 +479,19 @@ export default function ActivityDetailPage() {
               )}
             </p>
           </div>
-          {!activity.is_race && !race && !editingRace && (
-            <button type="button" className="button ghost small detail-race-button" onClick={() => setEditingRace(true)}>
-              <Trophy size={14} aria-hidden /> Add race result
+          <div className="detail-actions">
+            {!activity.is_race && !race && !editingRace && (
+              <button type="button" className="button ghost small" onClick={() => setEditingRace(true)}>
+                <Trophy size={14} aria-hidden /> Add race result
+              </button>
+            )}
+            <button type="button" className="button ghost small" onClick={refresh}
+              disabled={refreshing || details.status === "loading"}
+              title="Fetch the map, graphs and laps from Garmin again">
+              <RefreshCw size={14} aria-hidden className={refreshing ? "spin" : undefined} />
+              {refreshing ? "Refreshing…" : "Refresh this activity"}
             </button>
-          )}
+          </div>
           {activity.gear.length > 0 && (
             <p className="detail-gear">
               {activity.gear.map((g) => (

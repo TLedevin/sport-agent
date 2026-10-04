@@ -257,6 +257,8 @@ export const api = {
   },
   activity: (activityId: number) => request<ActivityPageData>(`/api/activities/${activityId}`),
   activityDetails: (activityId: number) => request<ActivityDetails>(`/api/activities/${activityId}/details`),
+  refreshActivityDetails: (activityId: number) =>
+    request<ActivityDetails>(`/api/activities/${activityId}/details/refresh`, { method: "POST" }),
   track: (activityId: number) => request<Track>(`/api/activities/${activityId}/track`),
   gear: () => request<Gear[]>("/api/gear"),
   /** The photo as a blob: it needs the session header, so an <img> can't load it directly.

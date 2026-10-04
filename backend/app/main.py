@@ -251,6 +251,15 @@ def get_activity_details(activity_id: int, db: Session = Depends(get_db)) -> dic
         return garmin.details(db, activity)
 
 
+@app.post("/api/activities/{activity_id}/details/refresh", dependencies=authed)
+def refresh_activity_details(activity_id: int, db: Session = Depends(get_db)) -> dict:
+    """Fetches the details from Garmin again, e.g. when a first fetch came back without graphs.
+    Your title, race result, photos and gear are stored apart and stay as they are."""
+    activity = _get_activity(db, activity_id)
+    with _garmin_errors():
+        return garmin.details(db, activity, refresh=True)
+
+
 @app.get("/api/activities/{activity_id}/track", dependencies=authed)
 def get_track(activity_id: int, db: Session = Depends(get_db)) -> dict:
     activity = _get_activity(db, activity_id)

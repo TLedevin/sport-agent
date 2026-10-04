@@ -1175,7 +1175,10 @@ a.button {
 
 /* ---------- Race results ---------- */
 
-.detail-race-button {
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-self: flex-start;
 }
 
