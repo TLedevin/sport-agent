@@ -1,7 +1,7 @@
 import { Pencil, Trash2, Trophy } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { api, ApiError, type ActivityPageData, type Gender, type RaceResult } from "../api";
-import { clock, paceOrSpeed } from "../format";
+import { clock, km, paceOrSpeed } from "../format";
 
 /** French athletics (FFA) categories, the usual ones on race results; any other text works too. */
 const CATEGORIES: [string, string][] = [
@@ -24,6 +24,35 @@ const CATEGORIES: [string, string][] = [
 ];
 
 const GENDER_LABEL: Record<Gender, string> = { men: "Men", women: "Women" };
+
+/** Usual race distances, in meters, as quick choices. */
+const DISTANCES: [string, number][] = [
+  ["5 km", 5000],
+  ["10 km", 10000],
+  ["Half marathon", 21097.5],
+  ["Marathon", 42195],
+];
+
+/** "10 km", "Half marathon", or "15.5 km". */
+export function raceDistanceLabel(meters: number): string {
+  return DISTANCES.find(([, m]) => Math.abs(m - meters) < 1)?.[0] ?? km(meters);
+}
+
+/** "10", "10.5" or "10,5" (km) -> meters; null when empty or not a number. */
+function parseKm(text: string): number | null {
+  const value = Number(text.trim().replace(",", "."));
+  return text.trim() && Number.isFinite(value) && value > 0 ? Math.round(value * 1000 * 10) / 10 : null;
+}
+
+/** Meters -> the text of the km field: "21.0975", "10". */
+function kmText(meters: number | null | undefined): string {
+  return meters ? String(Number((meters / 1000).toFixed(4))) : "";
+}
+
+/** Same distance, give or take a meter (typed values are rounded). */
+function sameDistance(a: number | null, b: number): boolean {
+  return a !== null && Math.abs(a - b) < 1;
+}
 
 /** "3:17:25", "45:12", "3h17'25" or "3 17 25" -> seconds; null when it isn't a time. */
 export function parseTime(text: string): number | null {
@@ -90,6 +119,8 @@ export default function RaceResultSection({ activity, result, editing, onEdit, o
 
 function ResultView({ activity, result: r }: { activity: ActivityPageData; result: RaceResult }) {
   const watchTime = activity.duration;
+  // The pace over the race itself when its distance is known, else over the whole activity.
+  const distance = r.race_distance ?? activity.distance;
   const rankings = [
     { label: "Overall", rank: r.overall_rank, total: r.overall_total },
     { label: r.gender ? GENDER_LABEL[r.gender] : "By sex", rank: r.gender_rank, total: r.gender_total },
@@ -99,11 +130,15 @@ function ResultView({ activity, result: r }: { activity: ActivityPageData; resul
     <div className="race-result">
       {r.official_time && (
         <div className="race-time">
-          <span className="race-label">Official time</span>
+          <span className="race-label">
+            Official time{r.race_distance ? ` · ${raceDistanceLabel(r.race_distance)}` : ""}
+          </span>
           <strong>{clock(r.official_time)}</strong>
           <span className="muted">
-            {activity.distance > 0 && `${paceOrSpeed(activity.sport_type, activity.distance / r.official_time)} · `}
-            Watch {clock(watchTime)}
+            {distance > 0 && paceOrSpeed(activity.sport_type, distance / r.official_time)}
+            {r.race_distance
+              ? ` · in a ${km(activity.distance)} activity`
+              : `${distance > 0 ? " · " : ""}Watch ${clock(watchTime)}`}
           </span>
         </div>
       )}
@@ -118,7 +153,13 @@ function ResultView({ activity, result: r }: { activity: ActivityPageData; resul
           ))}
         </dl>
       )}
-      {!r.official_time && rankings.length === 0 && <p className="muted">No details yet.</p>}
+      {!r.official_time && r.race_distance && (
+        <div className="race-time">
+          <span className="race-label">Race distance</span>
+          <strong>{raceDistanceLabel(r.race_distance)}</strong>
+        </div>
+      )}
+      {!r.official_time && !r.race_distance && rankings.length === 0 && <p className="muted">No details yet.</p>}
     </div>
   );
 }
@@ -131,6 +172,7 @@ function RaceForm({ activity, result, onDone, onCancel }: {
 }) {
   const defaults = activity.race_defaults;
   const [time, setTime] = useState(result?.official_time ? clock(result.official_time) : "");
+  const [distanceKm, setDistanceKm] = useState(kmText(result?.race_distance));
   const [overall, setOverall] = useState({ rank: str(result?.overall_rank), total: str(result?.overall_total) });
   const [gender, setGender] = useState<Gender | null>(result ? result.gender : defaults.gender);
   const [byGender, setByGender] = useState({ rank: str(result?.gender_rank), total: str(result?.gender_total) });
@@ -146,9 +188,15 @@ function RaceForm({ activity, result, onDone, onCancel }: {
       setError("Type the time as h:mm:ss (e.g. 3:17:25) or mm:ss (e.g. 45:12).");
       return;
     }
+    const raceDistance = distanceKm.trim() ? parseKm(distanceKm) : null;
+    if (distanceKm.trim() && raceDistance === null) {
+      setError("Type the race distance in km, e.g. 10 or 21.1.");
+      return;
+    }
     // Sex and category only count when there's a ranking for them, or to prefill the next race.
     const body: RaceResult = {
       official_time: seconds,
+      race_distance: raceDistance,
       overall_rank: num(overall.rank),
       overall_total: num(overall.total),
       gender,
@@ -194,6 +242,29 @@ function RaceForm({ activity, result, onDone, onCancel }: {
           </button>
         </small>
       </label>
+
+      <fieldset className="race-rank-row race-distance-row">
+        <legend>Race distance</legend>
+        <div className="segmented" role="group" aria-label="Usual distances">
+          {DISTANCES.map(([label, meters]) => (
+            <button key={label} type="button" aria-pressed={sameDistance(parseKm(distanceKm), meters)}
+              onClick={() => setDistanceKm(sameDistance(parseKm(distanceKm), meters) ? "" : kmText(meters))}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <span className="race-km">
+          <input type="text" inputMode="decimal" aria-label="Race distance in km" value={distanceKm}
+            placeholder={activity.distance > 0 ? String(Math.round(activity.distance / 100) / 10) : "km"}
+            onChange={(e) => setDistanceKm(e.target.value)} />
+          km
+        </span>
+        <small className="muted race-hint">
+          {activity.distance > 0
+            ? `When the race was only part of this ${km(activity.distance)} activity. Empty: the whole activity.`
+            : "The race's distance, for the pace."}
+        </small>
+      </fieldset>
 
       <fieldset className="race-rank-row">
         <legend>Overall</legend>

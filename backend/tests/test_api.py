@@ -761,6 +761,7 @@ def test_race_results(auth, monkeypatch):
         "Choose men or women": {"gender_rank": 40},
         "Choose your category": {"category_rank": 12, "category": "  "},
         "doesn't look right": {"official_time": -5},
+        "race distance doesn't look right": {"race_distance": 0},
     }
     for message, body in problems.items():
         r = client.put(url, json=body, headers=auth)
@@ -769,11 +770,12 @@ def test_race_results(auth, monkeypatch):
     assert client.put("/api/activities/999/race-result", json={"overall_rank": 1}, headers=auth).status_code == 404
 
     result = {
-        "official_time": 11845.0, "overall_rank": 45, "overall_total": 812, "gender": "men", "gender_rank": 40,
+        "official_time": 11845.0, "race_distance": 42195.0, "overall_rank": 45, "overall_total": 812, "gender": "men", "gender_rank": 40,
         "gender_total": 600, "category": " M1 ", "category_rank": 12, "category_total": None,
     }
     saved = client.put(url, json=result, headers=auth)
     assert saved.status_code == 200 and saved.json()["category"] == "M1"
+    assert saved.json()["race_distance"] == 42195.0
     assert client.get("/api/activities/15002", headers=auth).json()["race_result"]["overall_rank"] == 45
     listed = {a["id"]: a for a in client.get("/api/activities?date_from=2027-01-01&date_to=2027-12-31", headers=auth).json()["items"]}
     assert listed[15002]["race_result"]["official_time"] == 11845.0 and listed[15001]["race_result"] is None

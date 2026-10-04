@@ -110,7 +110,7 @@ def _photos_by_activity(db: Session, activity_ids: list[int]) -> dict[int, list[
 
 
 RACE_FIELDS = (
-    "official_time", "overall_rank", "overall_total", "gender", "gender_rank", "gender_total",
+    "official_time", "race_distance", "overall_rank", "overall_total", "gender", "gender_rank", "gender_total",
     "category", "category_rank", "category_total",
 )
 
@@ -482,6 +482,7 @@ def _race_defaults(db: Session) -> dict:
 
 class RaceResultRequest(BaseModel):
     official_time: float | None = None  # seconds
+    race_distance: float | None = None  # meters
     overall_rank: int | None = None
     overall_total: int | None = None
     gender: Literal["men", "women"] | None = None
@@ -501,6 +502,8 @@ def _check_race(body: RaceResultRequest) -> str | None:
         return "Enter at least your time or a ranking."
     if body.official_time is not None and not 0 < body.official_time < 14 * 86400:
         return "The time doesn't look right."
+    if body.race_distance is not None and not 0 < body.race_distance <= 1_000_000:
+        return "The race distance doesn't look right."
     for name, label in (("overall", "overall"), ("gender", "sex"), ("category", "category")):
         rank, total = values[f"{name}_rank"], values[f"{name}_total"]
         if any(v is not None and v < 1 for v in (rank, total)):

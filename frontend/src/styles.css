@@ -1308,11 +1308,41 @@ a.button {
 }
 
 .race-rank-inputs input {
-  width: 96px;
+  width: 112px; /* room for the "Finishers" placeholder */
 }
 
 .race-category {
   width: 110px;
+}
+
+.race-distance-row .segmented {
+  flex-wrap: wrap;
+}
+
+.race-distance-row .segmented button {
+  white-space: nowrap;
+}
+
+.race-km {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+.race-km input {
+  width: 96px; /* fits 21.0975 */
+}
+
+.race-hint {
+  flex-basis: 100%;
+  padding-left: 110px; /* under the inputs, past the legend */
+}
+
+@media (max-width: 560px) {
+  .race-hint {
+    padding-left: 0;
+  }
 }
 
 .link-button {

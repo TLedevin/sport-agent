@@ -37,6 +37,8 @@ export type Gender = "men" | "women";
  * Totals are the number of finishers, when known. */
 export type RaceResult = {
   official_time: number | null;
+  /** Meters: the race's own distance, when the activity covers more (a 10 km race in a 25 km outing). */
+  race_distance: number | null;
   overall_rank: number | null;
   overall_total: number | null;
   gender: Gender | null;

@@ -2,6 +2,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Trophy, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { api, ApiError, photoSrc, type Activity, type ActivityQuery, type Family, type SortField } from "../api";
+import { raceDistanceLabel } from "../components/RaceResult";
 import SportFilter from "../components/SportFilter";
 import { activityDate, clock, km, meters, paceOrSpeed, sportLabel } from "../format";
 import { FAMILIES, SportBadge } from "../sports";
@@ -211,6 +212,7 @@ export default function ActivitiesPage() {
                               <span className="race-chip" title="Race result">
                                 <Trophy size={12} aria-hidden />
                                 {[
+                                  a.race_result.race_distance && raceDistanceLabel(a.race_result.race_distance),
                                   a.race_result.official_time && clock(a.race_result.official_time),
                                   a.race_result.overall_rank && `#${a.race_result.overall_rank}`,
                                 ].filter(Boolean).join(" · ") || "Race"}

@@ -3,7 +3,7 @@ import threading
 import time
 from collections.abc import Iterator
 
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import get_settings
@@ -62,7 +62,37 @@ def _ensure_schema() -> None:
             from . import models  # noqa: F401  (registers the tables)
 
             Base.metadata.create_all(engine)
+            add_missing_columns(engine)
             _schema_ready = True
+
+
+def add_missing_columns(target) -> list[str]:
+    """create_all makes new tables but never changes existing ones. A column added to a model
+    later is added here, so the schema can grow without a migration tool. Only optional
+    (nullable) columns: anything else needs a real migration. Returns what was added."""
+    from . import models  # noqa: F401  (registers the tables)
+
+    inspector = inspect(target)
+    quote = target.dialect.identifier_preparer.quote
+    # SQLite says ADD COLUMN; SQL Server just ADD.
+    add = "ADD COLUMN" if target.dialect.name == "sqlite" else "ADD"
+    added = []
+    with target.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if not inspector.has_table(table.name):
+                continue
+            existing = {c["name"] for c in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in existing:
+                    continue
+                if column.primary_key or not column.nullable:
+                    log.error("Column %s.%s is missing and can't be added automatically", table.name, column.name)
+                    continue
+                kind = column.type.compile(dialect=target.dialect)
+                conn.execute(text(f"ALTER TABLE {quote(table.name)} {add} {quote(column.name)} {kind} NULL"))
+                added.append(f"{table.name}.{column.name}")
+                log.info("Added column %s.%s", table.name, column.name)
+    return added
 
 
 def get_db() -> Iterator[Session]:

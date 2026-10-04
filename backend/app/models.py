@@ -114,6 +114,8 @@ class RaceResult(Base):
 
     activity_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
     official_time: Mapped[float | None] = mapped_column(Float)  # seconds, the organiser's time
+    # meters: the race's own distance, when the activity covers more (e.g. a 10 km race in a 25 km outing)
+    race_distance: Mapped[float | None] = mapped_column(Float)
     overall_rank: Mapped[int | None] = mapped_column(Integer)  # "scratch"
     overall_total: Mapped[int | None] = mapped_column(Integer)  # finishers, when known
     gender: Mapped[str | None] = mapped_column(String(8))  # men / women
