@@ -17,7 +17,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from . import routes
-from .models import Activity, ActivityDetail, ActivityGear, ActivityTrack, GarminAuth, Gear, GearPhoto
+from .models import Activity, ActivityDetail, ActivityGear, ActivityName, ActivityTrack, GarminAuth, Gear, GearPhoto
 from .sports import sport_family
 
 log = logging.getLogger(__name__)
@@ -104,13 +104,17 @@ def sync(db: Session, client: Garmin | None = None) -> SyncResult:
     try:
         client = client or connect(db)
         known = set(db.scalars(select(Activity.id)))
+        renamed = dict(db.execute(select(ActivityName.activity_id, ActivityName.name)).all())
         imported, start = 0, 0
         while True:
             page = client.get_activities(start, PAGE_SIZE)
             for data in page:
                 if data["activityId"] not in known:
                     imported += 1
-                db.merge(to_activity(data))  # also refreshes recently edited activities
+                activity = to_activity(data)
+                if activity.id in renamed:  # your title wins over Garmin's
+                    activity.name = renamed[activity.id]
+                db.merge(activity)  # also refreshes recently edited activities
             db.commit()
             if len(page) < PAGE_SIZE or any(a["activityId"] in known for a in page):
                 break

@@ -50,6 +50,7 @@ import {
 } from "../api";
 import ActivityCharts from "../components/ActivityCharts";
 import ActivityMap from "../components/ActivityMap";
+import ActivityTitle from "../components/ActivityTitle";
 import CardSparkline from "../components/CardSparkline";
 import PhotoGallery from "../components/PhotoGallery";
 import PhotoPicker from "../components/PhotoPicker";
@@ -450,7 +451,8 @@ export default function ActivityDetailPage() {
         <SportBadge family={activity.sport_family} size={48} />
         <div className="detail-head-body">
           <div className="detail-title">
-            <h1>{activity.name || sportLabel(activity.sport_type)}</h1>
+            <ActivityTitle activity={activity}
+              onRenamed={(name, renamed) => setActivity({ ...activity, name, renamed })} />
             <p className="page-sub">
               {sportLabel(activity.sport_type)} · {activityDate(activity.start_time_local)}
               {activity.location_name && (

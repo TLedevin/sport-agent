@@ -96,6 +96,17 @@ class ActivityPhoto(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime)
 
 
+class ActivityName(Base):
+    """Your own title for an activity. Garmin's name is kept in Activity.raw; each sync puts
+    this one back on Activity.name, so lists, search and sorting all use it."""
+
+    __tablename__ = "activity_names"
+
+    activity_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    name: Mapped[str] = mapped_column(Unicode(255))
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
+
+
 class RaceResult(Base):
     """Your official result when an activity was a race: real time and rankings, typed in the app."""
 
@@ -103,6 +114,8 @@ class RaceResult(Base):
 
     activity_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
     official_time: Mapped[float | None] = mapped_column(Float)  # seconds, the organiser's time
+    # meters: the race's own distance, when the activity covers more (e.g. a 10 km race in a 25 km outing)
+    race_distance: Mapped[float | None] = mapped_column(Float)
     overall_rank: Mapped[int | None] = mapped_column(Integer)  # "scratch"
     overall_total: Mapped[int | None] = mapped_column(Integer)  # finishers, when known
     gender: Mapped[str | None] = mapped_column(String(8))  # men / women

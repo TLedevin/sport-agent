@@ -761,6 +761,7 @@ def test_race_results(auth, monkeypatch):
         "Choose men or women": {"gender_rank": 40},
         "Choose your category": {"category_rank": 12, "category": "  "},
         "doesn't look right": {"official_time": -5},
+        "race distance doesn't look right": {"race_distance": 0},
     }
     for message, body in problems.items():
         r = client.put(url, json=body, headers=auth)
@@ -769,11 +770,12 @@ def test_race_results(auth, monkeypatch):
     assert client.put("/api/activities/999/race-result", json={"overall_rank": 1}, headers=auth).status_code == 404
 
     result = {
-        "official_time": 11845.0, "overall_rank": 45, "overall_total": 812, "gender": "men", "gender_rank": 40,
+        "official_time": 11845.0, "race_distance": 42195.0, "overall_rank": 45, "overall_total": 812, "gender": "men", "gender_rank": 40,
         "gender_total": 600, "category": " M1 ", "category_rank": 12, "category_total": None,
     }
     saved = client.put(url, json=result, headers=auth)
     assert saved.status_code == 200 and saved.json()["category"] == "M1"
+    assert saved.json()["race_distance"] == 42195.0
     assert client.get("/api/activities/15002", headers=auth).json()["race_result"]["overall_rank"] == 45
     listed = {a["id"]: a for a in client.get("/api/activities?date_from=2027-01-01&date_to=2027-12-31", headers=auth).json()["items"]}
     assert listed[15002]["race_result"]["official_time"] == 11845.0 and listed[15001]["race_result"] is None
@@ -786,3 +788,31 @@ def test_race_results(auth, monkeypatch):
     assert client.get("/api/activities/15002", headers=auth).json()["race_result"]["official_time"] == 11800.0
     assert client.delete(url, headers=auth).status_code == 204
     assert client.get("/api/activities/15002", headers=auth).json()["race_result"] is None
+
+
+def test_rename_an_activity(auth, monkeypatch):
+    fake = FakeGarmin([activity(16001, "Course à pied")])
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    monkeypatch.setattr(garmin, "BACKFILL_BATCH", 0)
+    client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
+    client.post("/api/sync", headers=auth)
+    page = lambda: client.get("/api/activities/16001", headers=auth).json()  # noqa: E731
+    assert (page()["name"], page()["garmin_name"], page()["renamed"]) == ("Course à pied", "Course à pied", False)
+
+    r = client.put("/api/activities/16001/name", json={"name": "  Semi-marathon\n de Saumur "}, headers=auth)
+    assert r.json() == {"name": "Semi-marathon de Saumur", "garmin_name": "Course à pied", "renamed": True}
+    assert page()["name"] == "Semi-marathon de Saumur" and page()["renamed"] is True
+
+    # The title survives a sync that re-reads the activity from Garmin, and the list sorts by it.
+    fake.activities = [{**activity(16001, "Course à pied"), "distance": 21100.0}]
+    client.post("/api/sync", headers=auth)
+    assert page()["name"] == "Semi-marathon de Saumur" and page()["distance"] == 21100.0
+    listed = client.get("/api/activities?date_from=2027-10-01&date_to=2027-10-31", headers=auth).json()["items"]
+    assert "Semi-marathon de Saumur" in [a["name"] for a in listed]
+
+    # Empty (or Garmin's own name) resets it.
+    r = client.put("/api/activities/16001/name", json={"name": ""}, headers=auth)
+    assert r.json() == {"name": "Course à pied", "garmin_name": "Course à pied", "renamed": False}
+    client.post("/api/sync", headers=auth)
+    assert page()["name"] == "Course à pied"
+    assert client.put("/api/activities/999/name", json={"name": "x"}, headers=auth).status_code == 404
