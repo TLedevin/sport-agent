@@ -58,6 +58,7 @@ Prints, for the last 90 days, the start of each raw Garmin answer (VO2 max, race
 | GET | `/api/photos` | ✓ | Every activity with photos, newest first, with its photos |
 | GET | `/api/photos/{photo_id}/{full,thumb}?sig=` | signed | The image itself: the signature in the address replaces the session, so an `<img>` can load it |
 | PUT | `/api/activities/{id}/name` | ✓ | `{name}`: your title for the activity, kept over Garmin's on every sync (empty = back to Garmin's) |
+| GET | `/api/races` | ✓ | Every race with a result (oldest first), and races tagged in Garmin with no result yet |
 | PUT / DELETE | `/api/activities/{id}/race-result` | ✓ | Official time and rankings (overall, by sex, by category) of a race |
 | GET | `/api/garmin/status` | ✓ | Connected? last sync? |
 | PUT | `/api/garmin/tokens` | ✓ | Used by `garmin_login.py` |

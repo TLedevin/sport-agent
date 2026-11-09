@@ -1385,6 +1385,125 @@ a.button {
   }
 }
 
+/* ---------- Races page ---------- */
+
+.race-missing {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  background: var(--warning-bg);
+  border-color: var(--warning-border);
+}
+
+.race-missing p {
+  margin: 2px 0 0;
+}
+
+.race-records {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.race-record {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.race-record.empty {
+  opacity: 0.7;
+}
+
+.race-record-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.82rem;
+}
+
+.race-record-time {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  margin-top: 4px;
+}
+
+.race-record-race {
+  font-size: 0.85rem;
+  margin: 6px 0;
+}
+
+.record-line {
+  fill: none;
+  stroke: var(--text-primary);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+  opacity: 0.55;
+}
+
+.dot-key {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.record-key {
+  width: 16px;
+  border-top: 1.5px dashed var(--text-primary);
+  opacity: 0.55;
+}
+
+.pr-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--warning-bg);
+  font-size: 0.7rem;
+  font-weight: 700;
+  vertical-align: 1px;
+}
+
+.race-table .activity-name {
+  display: inline;
+}
+
+.race-table td:nth-child(2) {
+  min-width: 190px; /* names stay readable; the table scrolls on a phone */
+}
+
+/* Links in running text: the text's own color, underlined. */
+.race-missing a,
+.race-record a,
+.fitness-tiles .tile a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--baseline);
+  text-underline-offset: 2px;
+}
+
+.race-missing a:hover,
+.race-record a:hover,
+.fitness-tiles .tile a:hover {
+  text-decoration-color: currentColor;
+}
+
+.race-year {
+  font: inherit;
+  font-size: 0.85rem;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
 /* ---------- Dashboard: chart ---------- */
 
 .dash-row {
