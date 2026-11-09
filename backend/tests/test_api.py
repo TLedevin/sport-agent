@@ -852,3 +852,31 @@ def test_rename_an_activity(auth, monkeypatch):
     client.post("/api/sync", headers=auth)
     assert page()["name"] == "Course à pied"
     assert client.put("/api/activities/999/name", json={"name": "x"}, headers=auth).status_code == 404
+
+
+def test_races_page_data(auth, monkeypatch):
+    def run(activity_id: int, name: str, race: bool = False, **extra) -> dict:
+        data = {**activity(activity_id, name), **extra}
+        return {**data, "eventType": {"typeKey": "race"}} if race else data
+
+    fake = FakeGarmin([
+        run(17004, "Untagged 10K"),  # a race not tagged by Garmin, result typed in
+        run(17003, "Trail des crêtes", race=True, elevationGain=640.0),
+        run(17002, "Tagged, no result yet", race=True),
+        run(17001, "Easy run"),
+    ])
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    monkeypatch.setattr(garmin, "BACKFILL_BATCH", 0)
+    client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
+    client.post("/api/sync", headers=auth)
+    client.put("/api/activities/17003/race-result", json={"official_time": 5400.0, "race_distance": 21097.5,
+               "overall_rank": 30, "overall_total": 600}, headers=auth)
+    client.put("/api/activities/17004/race-result", json={"official_time": 2580.0}, headers=auth)
+
+    body = client.get("/api/races", headers=auth).json()
+    ours = [r for r in body["races"] if 17000 < r["id"] < 17100]
+    assert [r["name"] for r in ours] == ["Trail des crêtes", "Untagged 10K"]  # oldest first
+    assert ours[0]["race_result"]["race_distance"] == 21097.5 and ours[0]["elevation_gain"] == 640.0
+    assert "Tagged, no result yet" in [a["name"] for a in body["missing_results"]]
+    assert not {"Trail des crêtes", "Easy run"} & {a["name"] for a in body["missing_results"]}
+    assert client.get("/api/races").status_code == 401

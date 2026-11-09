@@ -526,6 +526,27 @@ def _check_race(body: RaceResultRequest) -> str | None:
     return None
 
 
+@app.get("/api/races", dependencies=authed)
+def list_races(db: Session = Depends(get_db)) -> dict:
+    """Every race with a result, oldest first (records and progress are worked out in the page),
+    and the activities Garmin tags as races that have no result yet."""
+    with_result = db.execute(
+        select(Activity, RaceResult)
+        .join(RaceResult, RaceResult.activity_id == Activity.id)
+        .order_by(Activity.start_time_utc, Activity.id)
+    ).all()
+    tagged = Activity.raw[("eventType", "typeKey")].as_string() == "race"
+    missing = db.scalars(
+        select(Activity)
+        .where(tagged, ~select(RaceResult.activity_id).where(RaceResult.activity_id == Activity.id).exists())
+        .order_by(Activity.start_time_utc.desc())
+    ).all()
+    return {
+        "races": [_activity_json(a, race=_race_json(r)) for a, r in with_result],
+        "missing_results": [_activity_json(a) for a in missing],
+    }
+
+
 @app.put("/api/activities/{activity_id}/race-result", dependencies=authed)
 def put_race_result(activity_id: int, body: RaceResultRequest, db: Session = Depends(get_db)) -> dict:
     _get_activity(db, activity_id)

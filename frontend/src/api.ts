@@ -275,6 +275,8 @@ export const api = {
   },
   map: () => request<MapActivity[]>("/api/map"),
   photos: () => request<PhotoGroup[]>("/api/photos"),
+  /** Races with a result (oldest first), and races tagged in Garmin that have none yet. */
+  races: () => request<{ races: Activity[]; missing_results: Activity[] }>("/api/races"),
   /** Your title for an activity; an empty one goes back to Garmin's name. */
   renameActivity: (activityId: number, name: string) =>
     request<{ name: string; garmin_name: string; renamed: boolean }>(`/api/activities/${activityId}/name`, {

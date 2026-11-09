@@ -32,16 +32,16 @@ function time(iso: string): number {
 }
 
 /** Clean tick step (1, 2, 2.5 or 5 times a power of ten) for roughly 4 gridlines. */
-function niceStep(span: number): number {
+export function niceStep(span: number): number {
   const raw = span / 4;
   const power = 10 ** Math.floor(Math.log10(raw));
   return [1, 2, 2.5, 5, 10].map((m) => m * power).find((s) => s >= raw) ?? 10 * power;
 }
 
-const CLOCK_STEPS = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200];
+export const CLOCK_STEPS = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200];
 
 /** Month starts (or years, for long windows) that fit the width, as timestamps. */
-function xTicks(start: number, end: number, width: number): { at: number; label: string }[] {
+export function xTicks(start: number, end: number, width: number): { at: number; label: string }[] {
   const maxLabels = Math.max(2, Math.floor(width / MIN_LABEL_SPACING));
   const first = new Date(start);
   const months: Date[] = [];
