@@ -1,11 +1,11 @@
 """Race certificates: the organiser's PDF (or a photo or scan of it), kept as is so it stays
-readable. One per race result."""
+readable. A race result can have several."""
 
 import base64
 import binascii
 import hashlib
 import hmac
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import PurePath
 from urllib.parse import quote, unquote_to_bytes
@@ -68,44 +68,35 @@ def _filename(name: str | None, content_type: str) -> str:
     return stem + EXTENSIONS[content_type]
 
 
-def save(db: Session, activity_id: int, url: str, filename: str | None) -> RaceCertificate:
+MAX_PER_RACE = 20
+
+
+def add(db: Session, activity_id: int, url: str, filename: str | None) -> RaceCertificate:
     data = _read(url)
     content_type = identify(data)
-    certificate = db.get(RaceCertificate, activity_id) or RaceCertificate(activity_id=activity_id)
-    certificate.data = data
-    certificate.content_type = content_type
-    certificate.filename = _filename(filename, content_type)
-    certificate.size = len(data)
-    # Whole seconds: SQL Server's DATETIME rounds fractions, and the time read back must match the
-    # one in the signed address. A replacement within the same second still gets a new one.
-    now = datetime.now(UTC).replace(tzinfo=None, microsecond=0)
-    if certificate.uploaded_at is not None and now <= certificate.uploaded_at:
-        now = certificate.uploaded_at + timedelta(seconds=1)
-    certificate.uploaded_at = now
+    certificate = RaceCertificate(
+        activity_id=activity_id, data=data, content_type=content_type, size=len(data),
+        filename=_filename(filename, content_type), uploaded_at=datetime.now(UTC).replace(tzinfo=None),
+    )
     db.add(certificate)
     db.commit()
     return certificate
 
 
-# A link opened in a new tab can't send the session header: like photos, the address carries
-# a signature, here tied to the race and the upload time, so a replaced certificate gets a new one.
+# A link opened in a new tab can't send the session header: like photos, the address carries a
+# signature tied to the certificate. A certificate's file never changes (a new one gets a new id).
 
-def version(uploaded_at: datetime) -> str:
-    return uploaded_at.strftime("%Y%m%d%H%M%S")
-
-
-def _signature(activity_id: int, v: str) -> str:
+def _signature(certificate_id: int) -> str:
     key = get_settings().session_secret.encode()
-    return hmac.new(key, f"race-certificate:{activity_id}:{v}".encode(), hashlib.sha256).hexdigest()[:32]
+    return hmac.new(key, f"race-certificate-file:{certificate_id}".encode(), hashlib.sha256).hexdigest()[:32]
 
 
-def signed_url(activity_id: int, uploaded_at: datetime) -> str:
-    v = version(uploaded_at)
-    return f"/api/certificates/{activity_id}?v={v}&sig={_signature(activity_id, v)}"
+def signed_url(certificate_id: int) -> str:
+    return f"/api/certificates/{certificate_id}?sig={_signature(certificate_id)}"
 
 
-def valid_signature(activity_id: int, v: str, sig: str) -> bool:
-    return hmac.compare_digest(_signature(activity_id, v), sig)
+def valid_signature(certificate_id: int, sig: str) -> bool:
+    return hmac.compare_digest(_signature(certificate_id), sig)
 
 
 def disposition(filename: str) -> str:

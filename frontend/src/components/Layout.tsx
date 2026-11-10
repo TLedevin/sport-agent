@@ -1,6 +1,7 @@
-import { Backpack, Images, LayoutDashboard, List, LogOut, MapIcon, RefreshCw, TrendingUp, Trophy, X } from "lucide-react";
+import { Backpack, LayoutDashboard, List, LogOut, MapIcon, RefreshCw, Trophy, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import Logo from "./Logo";
+import MoreMenu from "./MoreMenu";
 import { NavLink, Outlet, useLocation } from "react-router";
 import { timeAgo } from "../format";
 import { useSync } from "../sync";
@@ -33,18 +34,13 @@ export default function Layout({ onLogout }: { onLogout: () => void }) {
             <NavLink to="/map" className="nav-link">
               <MapIcon size={16} aria-hidden /> Map
             </NavLink>
-            <NavLink to="/fitness" className="nav-link">
-              <TrendingUp size={16} aria-hidden /> Fitness
-            </NavLink>
             <NavLink to="/races" className="nav-link">
               <Trophy size={16} aria-hidden /> Races
-            </NavLink>
-            <NavLink to="/photos" className="nav-link">
-              <Images size={16} aria-hidden /> Photos
             </NavLink>
             <NavLink to="/equipment" className="nav-link">
               <Backpack size={16} aria-hidden /> Equipment
             </NavLink>
+            <MoreMenu />
           </nav>
           <div className="header-actions">
             <span className="sync-status">

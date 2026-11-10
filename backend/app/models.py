@@ -128,11 +128,14 @@ class RaceResult(Base):
 
 
 class RaceCertificate(Base):
-    """The certificate of a race result (organiser's PDF, or a photo or scan of it), as uploaded."""
+    """A certificate of a race result (organiser's PDF, or a photo or scan of it), as uploaded.
+    A race can have several. (They were first one per race, in race_certificates: see
+    db.move_single_certificates.)"""
 
-    __tablename__ = "race_certificates"
+    __tablename__ = "race_certificate_files"
 
-    activity_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    activity_id: Mapped[int] = mapped_column(BigInteger, index=True)
     filename: Mapped[str] = mapped_column(Unicode(255))
     content_type: Mapped[str] = mapped_column(String(64))
     size: Mapped[int] = mapped_column(Integer)  # bytes

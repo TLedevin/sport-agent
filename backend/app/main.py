@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from garminconnect import GarminConnectAuthenticationError, GarminConnectTooManyRequestsError
 from pydantic import BaseModel
-from sqlalchemy import case, func, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.orm import Session
 
 from . import certificates, dashboard, fitness, garmin, photos, routes
@@ -116,33 +116,37 @@ RACE_FIELDS = (
 
 
 def _certificate_json(c) -> dict:
-    """`c` needs activity_id, filename, content_type, size and uploaded_at (never the file)."""
+    """`c` needs id, filename, content_type and size (never the file)."""
     return {
+        "id": c.id,
         "filename": c.filename,
         "content_type": c.content_type,
         "size": c.size,
-        "url": certificates.signed_url(c.activity_id, c.uploaded_at),
+        "url": certificates.signed_url(c.id),
     }
 
 
 CERTIFICATE_META = (
-    RaceCertificate.activity_id, RaceCertificate.filename, RaceCertificate.content_type,
-    RaceCertificate.size, RaceCertificate.uploaded_at,
+    RaceCertificate.id, RaceCertificate.activity_id, RaceCertificate.filename,
+    RaceCertificate.content_type, RaceCertificate.size,
 )
 
 
-def _certificates(db: Session, activity_ids: list[int] | None = None) -> dict[int, dict]:
-    """Certificates by activity, for the given activities (or all of them)."""
-    query = select(*CERTIFICATE_META)
+def _certificates(db: Session, activity_ids: list[int] | None = None) -> dict[int, list[dict]]:
+    """Certificates by activity, in the order they were added, for the given activities (or all)."""
+    query = select(*CERTIFICATE_META).order_by(RaceCertificate.uploaded_at, RaceCertificate.id)
     if activity_ids is not None:
         if not activity_ids:
             return {}
         query = query.where(RaceCertificate.activity_id.in_(activity_ids))
-    return {c.activity_id: _certificate_json(c) for c in db.execute(query)}
+    found: dict[int, list[dict]] = {}
+    for c in db.execute(query):
+        found.setdefault(c.activity_id, []).append(_certificate_json(c))
+    return found
 
 
-def _race_json(r: RaceResult | None, certificate: dict | None = None) -> dict | None:
-    return {**{f: getattr(r, f) for f in RACE_FIELDS}, "certificate": certificate} if r else None
+def _race_json(r: RaceResult | None, certificate_list: list[dict] | None = None) -> dict | None:
+    return {**{f: getattr(r, f) for f in RACE_FIELDS}, "certificates": certificate_list or []} if r else None
 
 
 def _race_results(db: Session, activity_ids: list[int]) -> dict[int, dict]:
@@ -595,9 +599,11 @@ def put_race_result(activity_id: int, body: RaceResultRequest, db: Session = Dep
 
 @app.delete("/api/activities/{activity_id}/race-result", dependencies=authed, status_code=204)
 def delete_race_result(activity_id: int, db: Session = Depends(get_db)) -> None:
-    for row in (db.get(RaceResult, activity_id), db.get(RaceCertificate, activity_id)):
-        if row is not None:
-            db.delete(row)
+    """The result goes with its certificates."""
+    result = db.get(RaceResult, activity_id)
+    if result is not None:
+        db.delete(result)
+    db.execute(delete(RaceCertificate).where(RaceCertificate.activity_id == activity_id))
     db.commit()
 
 
@@ -606,36 +612,39 @@ class CertificateRequest(BaseModel):
     filename: str | None = None
 
 
-@app.put("/api/activities/{activity_id}/race-result/certificate", dependencies=authed)
-def put_certificate(activity_id: int, body: CertificateRequest, db: Session = Depends(get_db)) -> dict:
-    """Adds or replaces the certificate of a race result."""
+@app.post("/api/activities/{activity_id}/race-result/certificates", dependencies=authed, status_code=201)
+def add_certificate(activity_id: int, body: CertificateRequest, db: Session = Depends(get_db)) -> dict:
+    """Adds a certificate to a race result (a race can have several)."""
     _get_activity(db, activity_id)
     if db.get(RaceResult, activity_id) is None:
         raise HTTPException(409, "Save the race result first.")
+    count = db.scalar(select(func.count()).select_from(RaceCertificate).where(RaceCertificate.activity_id == activity_id))
+    if count >= certificates.MAX_PER_RACE:
+        raise HTTPException(422, f"A race can have {certificates.MAX_PER_RACE} certificates at most.")
     try:
-        certificate = certificates.save(db, activity_id, body.url, body.filename)
+        certificate = certificates.add(db, activity_id, body.url, body.filename)
     except certificates.CertificateError as err:
         raise HTTPException(422, str(err))
     return _certificate_json(certificate)
 
 
-@app.delete("/api/activities/{activity_id}/race-result/certificate", dependencies=authed, status_code=204)
-def delete_certificate(activity_id: int, db: Session = Depends(get_db)) -> None:
-    certificate = db.get(RaceCertificate, activity_id)
+@app.delete("/api/race-certificates/{certificate_id}", dependencies=authed, status_code=204)
+def delete_certificate(certificate_id: int, db: Session = Depends(get_db)) -> None:
+    certificate = db.get(RaceCertificate, certificate_id)
     if certificate is not None:
         db.delete(certificate)
         db.commit()
 
 
-@app.get("/api/certificates/{activity_id}")
-def get_certificate(activity_id: int, v: str = "", sig: str = "", db: Session = Depends(get_db)) -> Response:
+@app.get("/api/certificates/{certificate_id}")
+def get_certificate(certificate_id: int, sig: str = "", db: Session = Depends(get_db)) -> Response:
     """The file itself, opened in a new tab: the signature in the address replaces the session."""
-    certificate = db.get(RaceCertificate, activity_id) if certificates.valid_signature(activity_id, v, sig) else None
-    if certificate is None or certificates.version(certificate.uploaded_at) != v:
+    certificate = db.get(RaceCertificate, certificate_id) if certificates.valid_signature(certificate_id, sig) else None
+    if certificate is None:
         raise HTTPException(404, "No certificate")
     return Response(certificate.data, media_type=certificate.content_type, headers={
         "Content-Disposition": certificates.disposition(certificate.filename),
-        "Cache-Control": "private, max-age=31536000, immutable",  # a new upload gets a new address
+        "Cache-Control": "private, max-age=31536000, immutable",  # a certificate's file never changes
         "X-Content-Type-Options": "nosniff",
     })
 

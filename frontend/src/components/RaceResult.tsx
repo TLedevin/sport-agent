@@ -1,4 +1,4 @@
-import { FileText, Link2, Pencil, RefreshCw, Trash2, Trophy, Upload } from "lucide-react";
+import { FileText, Link2, Pencil, Trash2, Trophy, Upload } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
 import { api, ApiError, photoSrc, type ActivityPageData, type Certificate, type Gender, type RaceResult } from "../api";
 import { clock, km, paceOrSpeed } from "../format";
@@ -106,8 +106,8 @@ export default function RaceResultSection({ activity, result, editing, onEdit, o
       ) : result ? (
         <>
           <ResultView activity={activity} result={result} />
-          <CertificateRow activityId={activity.id} certificate={result.certificate ?? null}
-            onChange={(certificate) => onDone({ ...result, certificate })} />
+          <Certificates activityId={activity.id} certificates={result.certificates ?? []}
+            onChange={(certificates) => onDone({ ...result, certificates })} />
         </>
       ) : (
         <div className="race-empty">
@@ -139,100 +139,110 @@ function readAsDataUrl(file: File): Promise<string> {
   });
 }
 
-/** The race's certificate: open it, replace it or remove it; or add one from the device or a link. */
-function CertificateRow({ activityId, certificate, onChange }: {
-  activityId: number; certificate: Certificate | null; onChange: (c: Certificate | null) => void;
+/** The race's certificates: each opens in a new tab and can be removed; more can be added from
+ * the device (several at once) or a link. */
+function Certificates({ activityId, certificates, onChange }: {
+  activityId: number; certificates: Certificate[]; onChange: (list: Certificate[]) => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [linkOpen, setLinkOpen] = useState(false);
   const [link, setLink] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Uploads one after the other add to the latest list, not the one this render started with.
+  const latest = useRef(certificates);
+  latest.current = certificates;
 
-  async function upload(source: () => Promise<[string, string | null]>) {
-    setBusy(true);
+  async function upload(sources: (() => Promise<[string, string | null]>)[]) {
     setError(null);
-    try {
-      const [url, filename] = await source();
-      onChange(await api.uploadCertificate(activityId, url, filename));
+    const problems: string[] = [];
+    for (const [i, source] of sources.entries()) {
+      setBusy(sources.length > 1 ? `Adding ${i + 1} of ${sources.length}…` : "Adding…");
+      try {
+        const [url, filename] = await source();
+        const added = await api.addCertificate(activityId, url, filename);
+        latest.current = [...latest.current, added];
+        onChange(latest.current);
+      } catch (err) {
+        problems.push(err instanceof ApiError && err.status === 422 ? err.detail
+          : err instanceof Error && err.message.startsWith("This file") ? err.message : "Couldn't add a certificate. Try again.");
+      }
+    }
+    setBusy(null);
+    if (problems.length) setError([...new Set(problems)].join(" "));
+    else {
       setLinkOpen(false);
       setLink("");
-    } catch (err) {
-      setError(err instanceof ApiError && err.status === 422 ? err.detail
-        : err instanceof Error && err.message.startsWith("This file") ? err.message : "Couldn't add the certificate. Try again.");
-    } finally {
-      setBusy(false);
     }
   }
 
-  function picked(file: File | undefined) {
-    if (!file) return;
-    if (file.size > MAX_CERTIFICATE) {
-      setError("This file is too large (10 MB at most).");
-      return;
-    }
-    upload(async () => [await readAsDataUrl(file), file.name]);
+  function picked(files: File[]) {
+    const tooLarge = files.filter((f) => f.size > MAX_CERTIFICATE);
+    if (tooLarge.length) setError(`Too large (10 MB at most): ${tooLarge.map((f) => f.name).join(", ")}.`);
+    const ok = files.filter((f) => f.size <= MAX_CERTIFICATE);
+    if (ok.length) upload(ok.map((file) => async () => [await readAsDataUrl(file), file.name]));
   }
 
-  async function remove() {
-    if (!window.confirm("Remove this certificate?")) return;
-    setBusy(true);
+  async function remove(certificate: Certificate) {
+    if (!window.confirm(`Remove ${certificate.filename}?`)) return;
+    setBusy("Removing…");
     try {
-      await api.deleteCertificate(activityId);
-      onChange(null);
+      await api.deleteCertificate(certificate.id);
+      onChange(latest.current.filter((c) => c.id !== certificate.id));
     } catch {
       setError("Couldn't remove the certificate. Try again.");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
   return (
     <div className="race-certificate">
-      <input ref={input} type="file" accept="application/pdf,image/*" hidden
+      <input ref={input} type="file" accept="application/pdf,image/*" multiple hidden
         onChange={(e) => {
-          picked(e.target.files?.[0]);
-          e.target.value = ""; // the same file can be picked again
+          picked([...(e.target.files ?? [])]);
+          e.target.value = ""; // the same files can be picked again
         }} />
-      {certificate ? (
-        <>
-          <a className="certificate-link" href={photoSrc(certificate.url)} target="_blank" rel="noopener noreferrer"
-            title={certificate.filename}>
-            <FileText size={18} aria-hidden />
-            <span>
-              <strong>View certificate</strong>
-              <span className="muted">{certificateInfo(certificate)}</span>
-            </span>
-          </a>
-          <span className="spacer" />
-          <button type="button" className="button ghost small" onClick={() => input.current?.click()} disabled={busy}>
-            <RefreshCw size={14} aria-hidden /> Replace
-          </button>
-          <button type="button" className="button ghost small danger" onClick={remove} disabled={busy}>
-            <Trash2 size={14} aria-hidden /> Remove
-          </button>
-        </>
-      ) : (
-        <>
-          <button type="button" className="button small" onClick={() => input.current?.click()} disabled={busy}>
-            <Upload size={14} aria-hidden /> {busy ? "Adding…" : "Add certificate"}
-          </button>
-          <span className="muted">PDF or image, from your device</span>
-          {!linkOpen && (
-            <button type="button" className="link-button" onClick={() => setLinkOpen(true)} disabled={busy}>
-              or from a link
-            </button>
-          )}
-        </>
+      {certificates.length > 0 && (
+        <ul className="certificate-list" aria-label="Certificates">
+          {certificates.map((c) => (
+            <li key={c.id}>
+              <a className="certificate-link" href={photoSrc(c.url)} target="_blank" rel="noopener noreferrer"
+                title={`Open ${c.filename}`}>
+                <FileText size={18} aria-hidden />
+                <span>
+                  <strong>{c.filename}</strong>
+                  <span className="muted">{certificateInfo(c)}</span>
+                </span>
+              </a>
+              <button type="button" className="button ghost icon-only small danger" onClick={() => remove(c)}
+                disabled={busy !== null} aria-label={`Remove ${c.filename}`} title="Remove">
+                <Trash2 size={14} aria-hidden />
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
-      {linkOpen && !certificate && (
+      <div className="certificate-actions">
+        <button type="button" className="button small" onClick={() => input.current?.click()} disabled={busy !== null}>
+          <Upload size={14} aria-hidden /> {busy ?? (certificates.length ? "Add another certificate" : "Add certificate")}
+        </button>
+        <span className="muted">PDF or image, from your device</span>
+        {!linkOpen && (
+          <button type="button" className="link-button" onClick={() => setLinkOpen(true)} disabled={busy !== null}>
+            or from a link
+          </button>
+        )}
+      </div>
+      {linkOpen && (
         <form className="photo-input-row certificate-link-form" onSubmit={(e) => {
           e.preventDefault();
-          if (link.trim()) upload(async () => [link.trim(), decodeURIComponent(link.trim().split(/[?#]/)[0].split("/").pop() || "")]);
+          const url = link.trim();
+          if (url) upload([async () => [url, decodeURIComponent(url.split(/[?#]/)[0].split("/").pop() || "")]]);
         }}>
           <input type="url" inputMode="url" placeholder="https://… (link to the PDF on the race's website)" aria-label="Certificate link"
-            value={link} onChange={(e) => setLink(e.target.value)} autoFocus disabled={busy} />
-          <button type="submit" className="button" disabled={busy || !link.trim()}>
+            value={link} onChange={(e) => setLink(e.target.value)} autoFocus disabled={busy !== null} />
+          <button type="submit" className="button" disabled={busy !== null || !link.trim()}>
             <Link2 size={15} aria-hidden /> Add
           </button>
         </form>
