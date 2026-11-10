@@ -63,7 +63,25 @@ def _ensure_schema() -> None:
 
             Base.metadata.create_all(engine)
             add_missing_columns(engine)
+            move_single_certificates(engine)
             _schema_ready = True
+
+
+def move_single_certificates(target) -> int:
+    """Race certificates were first one per race, in race_certificates (keyed by the race). They
+    now live in race_certificate_files, several per race. Moves any left in the old table, which
+    stays (empty), so nothing is ever lost. Returns how many were moved."""
+    if not inspect(target).has_table("race_certificates"):
+        return 0
+    columns = "activity_id, filename, content_type, size, data, uploaded_at"
+    with target.begin() as conn:  # both or neither
+        moved = conn.execute(text(
+            f"INSERT INTO race_certificate_files ({columns}) SELECT {columns} FROM race_certificates"
+        )).rowcount
+        conn.execute(text("DELETE FROM race_certificates"))
+    if moved:
+        log.info("Moved %d race certificates to race_certificate_files", moved)
+    return moved
 
 
 def add_missing_columns(target) -> list[str]:

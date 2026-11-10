@@ -47,12 +47,12 @@ export type RaceResult = {
   category: string | null;
   category_rank: number | null;
   category_total: number | null;
-  /** The organiser's certificate, when added (not sent when saving the result). */
-  certificate?: Certificate | null;
+  /** The organiser's certificates, in the order added (not sent when saving the result). */
+  certificates?: Certificate[];
 };
 
 /** A race certificate. `url` is a signed path on the API: it opens in a new tab without the session. */
-export type Certificate = { filename: string; content_type: string; size: number; url: string };
+export type Certificate = { id: number; filename: string; content_type: string; size: number; url: string };
 
 /** A photo added to an activity. `url` and `thumb_url` are signed paths on the API: an <img> can load them. */
 export type Photo = { id: number; width: number; height: number; url: string; thumb_url: string };
@@ -291,13 +291,13 @@ export const api = {
   saveRaceResult: (activityId: number, result: RaceResult) =>
     request<RaceResult>(`/api/activities/${activityId}/race-result`, { method: "PUT", body: JSON.stringify(result) }),
   /** `url`: a data: URL (a file picked on the device) or a link to the file. */
-  uploadCertificate: (activityId: number, url: string, filename: string | null) =>
-    request<Certificate>(`/api/activities/${activityId}/race-result/certificate`, {
-      method: "PUT",
+  addCertificate: (activityId: number, url: string, filename: string | null) =>
+    request<Certificate>(`/api/activities/${activityId}/race-result/certificates`, {
+      method: "POST",
       body: JSON.stringify({ url, filename }),
     }),
-  deleteCertificate: async (activityId: number) => {
-    await send(`/api/activities/${activityId}/race-result/certificate`, { method: "DELETE" });
+  deleteCertificate: async (certificateId: number) => {
+    await send(`/api/race-certificates/${certificateId}`, { method: "DELETE" });
   },
   deleteRaceResult: async (activityId: number) => {
     await send(`/api/activities/${activityId}/race-result`, { method: "DELETE" });
