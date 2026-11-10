@@ -880,3 +880,60 @@ def test_races_page_data(auth, monkeypatch):
     assert "Tagged, no result yet" in [a["name"] for a in body["missing_results"]]
     assert not {"Trail des crêtes", "Easy run"} & {a["name"] for a in body["missing_results"]}
     assert client.get("/api/races").status_code == 401
+
+
+def test_race_certificate(auth, monkeypatch):
+    import base64
+    from io import BytesIO
+
+    from PIL import Image
+
+    fake = FakeGarmin([{**activity(18001, "10 km de Saumur"), "eventType": {"typeKey": "race"}}])
+    monkeypatch.setattr(garmin, "connect", lambda db: fake)
+    monkeypatch.setattr(garmin, "BACKFILL_BATCH", 0)
+    client.put("/api/garmin/tokens", json={"tokens": FakeTokenClient().dumps()}, headers=auth)
+    client.post("/api/sync", headers=auth)
+    url = "/api/activities/18001/race-result/certificate"
+    pdf = b"%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n"
+    data_url = lambda kind, data: f"data:{kind};base64," + base64.b64encode(data).decode()  # noqa: E731
+
+    # A certificate belongs to a result.
+    assert client.put(url, json={"url": data_url("application/pdf", pdf)}, headers=auth).status_code == 409
+    client.put("/api/activities/18001/race-result", json={"official_time": 2575.0}, headers=auth)
+
+    bad = client.put(url, json={"url": data_url("text/plain", b"hello"), "filename": "notes.txt"}, headers=auth)
+    assert bad.status_code == 422 and "PDF or an image" in bad.json()["detail"]
+
+    saved = client.put(url, json={"url": data_url("application/pdf", pdf), "filename": "C:\\Users\\me\\Diplôme Saumur.PDF"},
+                       headers=auth)
+    assert saved.status_code == 200
+    cert = saved.json()
+    assert (cert["filename"], cert["content_type"], cert["size"]) == ("Diplôme Saumur.pdf", "application/pdf", len(pdf))
+
+    # The file: no session needed, the signature is the key; it opens in the browser.
+    r = client.get(cert["url"])
+    assert r.content == pdf and r.headers["content-type"] == "application/pdf"
+    assert r.headers["content-disposition"].startswith("inline;") and "Dipl%C3%B4me%20Saumur.pdf" in r.headers["content-disposition"]
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert client.get(cert["url"].replace("sig=", "sig=0")).status_code == 404
+
+    # It shows with the result, on the activity and on the Races page.
+    assert client.get("/api/activities/18001", headers=auth).json()["race_result"]["certificate"]["url"] == cert["url"]
+    race = next(r for r in client.get("/api/races", headers=auth).json()["races"] if r["id"] == 18001)
+    assert race["race_result"]["certificate"]["filename"] == "Diplôme Saumur.pdf"
+
+    # Replacing it (a photo of it this time): a new address, the old one stops working.
+    out = BytesIO()
+    Image.new("RGB", (60, 40), "white").save(out, "PNG")
+    replaced = client.put(url, json={"url": data_url("image/png", out.getvalue())}, headers=auth).json()
+    assert replaced["content_type"] == "image/png" and replaced["filename"] == "certificate.png"
+    assert replaced["url"] != cert["url"] and client.get(cert["url"]).status_code == 404
+    assert client.get(replaced["url"]).content == out.getvalue()
+
+    # Removing it, or the result it belongs to.
+    assert client.delete(url, headers=auth).status_code == 204
+    assert client.get("/api/activities/18001", headers=auth).json()["race_result"]["certificate"] is None
+    client.put(url, json={"url": data_url("application/pdf", pdf)}, headers=auth)
+    client.delete("/api/activities/18001/race-result", headers=auth)
+    client.put("/api/activities/18001/race-result", json={"official_time": 2575.0}, headers=auth)
+    assert client.get("/api/activities/18001", headers=auth).json()["race_result"]["certificate"] is None
