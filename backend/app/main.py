@@ -13,11 +13,11 @@ from pydantic import BaseModel
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
-from . import dashboard, fitness, garmin, photos, routes
+from . import certificates, dashboard, fitness, garmin, photos, routes
 from .auth import check_password, create_session, require_session
 from .config import get_settings
 from .db import SessionLocal, get_db, wake_database
-from .models import Activity, ActivityGear, ActivityName, ActivityPhoto, ActivityRoute, RaceResult, FitnessSource, FitnessValue, GarminAuth, Gear, GearPhoto
+from .models import Activity, ActivityGear, ActivityName, ActivityPhoto, ActivityRoute, RaceCertificate, RaceResult, FitnessSource, FitnessValue, GarminAuth, Gear, GearPhoto
 from .sports import FAMILIES, sport_family
 
 logging.basicConfig(level=logging.INFO)
@@ -115,14 +115,44 @@ RACE_FIELDS = (
 )
 
 
-def _race_json(r: RaceResult | None) -> dict | None:
-    return {f: getattr(r, f) for f in RACE_FIELDS} if r else None
+def _certificate_json(c) -> dict:
+    """`c` needs activity_id, filename, content_type, size and uploaded_at (never the file)."""
+    return {
+        "filename": c.filename,
+        "content_type": c.content_type,
+        "size": c.size,
+        "url": certificates.signed_url(c.activity_id, c.uploaded_at),
+    }
+
+
+CERTIFICATE_META = (
+    RaceCertificate.activity_id, RaceCertificate.filename, RaceCertificate.content_type,
+    RaceCertificate.size, RaceCertificate.uploaded_at,
+)
+
+
+def _certificates(db: Session, activity_ids: list[int] | None = None) -> dict[int, dict]:
+    """Certificates by activity, for the given activities (or all of them)."""
+    query = select(*CERTIFICATE_META)
+    if activity_ids is not None:
+        if not activity_ids:
+            return {}
+        query = query.where(RaceCertificate.activity_id.in_(activity_ids))
+    return {c.activity_id: _certificate_json(c) for c in db.execute(query)}
+
+
+def _race_json(r: RaceResult | None, certificate: dict | None = None) -> dict | None:
+    return {**{f: getattr(r, f) for f in RACE_FIELDS}, "certificate": certificate} if r else None
 
 
 def _race_results(db: Session, activity_ids: list[int]) -> dict[int, dict]:
     if not activity_ids:
         return {}
-    return {r.activity_id: _race_json(r) for r in db.scalars(select(RaceResult).where(RaceResult.activity_id.in_(activity_ids)))}
+    certs = _certificates(db, activity_ids)
+    return {
+        r.activity_id: _race_json(r, certs.get(r.activity_id))
+        for r in db.scalars(select(RaceResult).where(RaceResult.activity_id.in_(activity_ids)))
+    }
 
 
 def _activity_json(a: Activity, photos: list[dict] | None = None, race: dict | None = None) -> dict:
@@ -234,7 +264,7 @@ def get_activity(activity_id: int, db: Session = Depends(get_db)) -> dict:
     ).all()
     return {
         **_activity_json(activity, _photos_by_activity(db, [activity.id]).get(activity.id),
-                         _race_json(db.get(RaceResult, activity.id))),
+                         _race_json(db.get(RaceResult, activity.id), _certificates(db, [activity.id]).get(activity.id))),
         "race_defaults": _race_defaults(db),
         "garmin_name": _garmin_name(activity),
         "renamed": db.get(ActivityName, activity.id) is not None,
@@ -535,6 +565,7 @@ def list_races(db: Session = Depends(get_db)) -> dict:
         .join(RaceResult, RaceResult.activity_id == Activity.id)
         .order_by(Activity.start_time_utc, Activity.id)
     ).all()
+    certs = _certificates(db)
     tagged = Activity.raw[("eventType", "typeKey")].as_string() == "race"
     missing = db.scalars(
         select(Activity)
@@ -542,7 +573,7 @@ def list_races(db: Session = Depends(get_db)) -> dict:
         .order_by(Activity.start_time_utc.desc())
     ).all()
     return {
-        "races": [_activity_json(a, race=_race_json(r)) for a, r in with_result],
+        "races": [_activity_json(a, race=_race_json(r, certs.get(a.id))) for a, r in with_result],
         "missing_results": [_activity_json(a) for a in missing],
     }
 
@@ -559,15 +590,54 @@ def put_race_result(activity_id: int, body: RaceResultRequest, db: Session = Dep
     result.updated_at = datetime.now(UTC).replace(tzinfo=None)
     db.add(result)
     db.commit()
-    return _race_json(result)
+    return _race_json(result, _certificates(db, [activity_id]).get(activity_id))
 
 
 @app.delete("/api/activities/{activity_id}/race-result", dependencies=authed, status_code=204)
 def delete_race_result(activity_id: int, db: Session = Depends(get_db)) -> None:
-    result = db.get(RaceResult, activity_id)
-    if result is not None:
-        db.delete(result)
+    for row in (db.get(RaceResult, activity_id), db.get(RaceCertificate, activity_id)):
+        if row is not None:
+            db.delete(row)
+    db.commit()
+
+
+class CertificateRequest(BaseModel):
+    url: str  # a data: URL (a file picked on the device) or a link to the file
+    filename: str | None = None
+
+
+@app.put("/api/activities/{activity_id}/race-result/certificate", dependencies=authed)
+def put_certificate(activity_id: int, body: CertificateRequest, db: Session = Depends(get_db)) -> dict:
+    """Adds or replaces the certificate of a race result."""
+    _get_activity(db, activity_id)
+    if db.get(RaceResult, activity_id) is None:
+        raise HTTPException(409, "Save the race result first.")
+    try:
+        certificate = certificates.save(db, activity_id, body.url, body.filename)
+    except certificates.CertificateError as err:
+        raise HTTPException(422, str(err))
+    return _certificate_json(certificate)
+
+
+@app.delete("/api/activities/{activity_id}/race-result/certificate", dependencies=authed, status_code=204)
+def delete_certificate(activity_id: int, db: Session = Depends(get_db)) -> None:
+    certificate = db.get(RaceCertificate, activity_id)
+    if certificate is not None:
+        db.delete(certificate)
         db.commit()
+
+
+@app.get("/api/certificates/{activity_id}")
+def get_certificate(activity_id: int, v: str = "", sig: str = "", db: Session = Depends(get_db)) -> Response:
+    """The file itself, opened in a new tab: the signature in the address replaces the session."""
+    certificate = db.get(RaceCertificate, activity_id) if certificates.valid_signature(activity_id, v, sig) else None
+    if certificate is None or certificates.version(certificate.uploaded_at) != v:
+        raise HTTPException(404, "No certificate")
+    return Response(certificate.data, media_type=certificate.content_type, headers={
+        "Content-Disposition": certificates.disposition(certificate.filename),
+        "Cache-Control": "private, max-age=31536000, immutable",  # a new upload gets a new address
+        "X-Content-Type-Options": "nosniff",
+    })
 
 
 # --- Activity photos -------------------------------------------------------------------------

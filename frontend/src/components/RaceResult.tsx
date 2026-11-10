@@ -1,6 +1,6 @@
-import { Pencil, Trash2, Trophy } from "lucide-react";
-import { useState, type FormEvent } from "react";
-import { api, ApiError, type ActivityPageData, type Gender, type RaceResult } from "../api";
+import { FileText, Link2, Pencil, RefreshCw, Trash2, Trophy, Upload } from "lucide-react";
+import { useRef, useState, type FormEvent } from "react";
+import { api, ApiError, photoSrc, type ActivityPageData, type Certificate, type Gender, type RaceResult } from "../api";
 import { clock, km, paceOrSpeed } from "../format";
 
 /** French athletics (FFA) categories, the usual ones on race results; any other text works too. */
@@ -104,7 +104,11 @@ export default function RaceResultSection({ activity, result, editing, onEdit, o
       {editing ? (
         <RaceForm activity={activity} result={result} onDone={onDone} onCancel={onCancel} />
       ) : result ? (
-        <ResultView activity={activity} result={result} />
+        <>
+          <ResultView activity={activity} result={result} />
+          <CertificateRow activityId={activity.id} certificate={result.certificate ?? null}
+            onChange={(certificate) => onDone({ ...result, certificate })} />
+        </>
       ) : (
         <div className="race-empty">
           <p className="muted">Add your official time and your rankings: overall, by sex and by category.</p>
@@ -114,6 +118,127 @@ export default function RaceResultSection({ activity, result, editing, onEdit, o
         </div>
       )}
     </section>
+  );
+}
+
+const MAX_CERTIFICATE = 10 * 1024 * 1024; // bytes, as on the server
+
+/** "PDF · 120 KB", "Image · 2.1 MB". */
+export function certificateInfo(c: Certificate): string {
+  const kind = c.content_type === "application/pdf" ? "PDF" : "Image";
+  const size = c.size < 1024 * 1024 ? `${Math.max(1, Math.round(c.size / 1024))} KB` : `${(c.size / 1024 / 1024).toFixed(1)} MB`;
+  return `${kind} · ${size}`;
+}
+
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+/** The race's certificate: open it, replace it or remove it; or add one from the device or a link. */
+function CertificateRow({ activityId, certificate, onChange }: {
+  activityId: number; certificate: Certificate | null; onChange: (c: Certificate | null) => void;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [link, setLink] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function upload(source: () => Promise<[string, string | null]>) {
+    setBusy(true);
+    setError(null);
+    try {
+      const [url, filename] = await source();
+      onChange(await api.uploadCertificate(activityId, url, filename));
+      setLinkOpen(false);
+      setLink("");
+    } catch (err) {
+      setError(err instanceof ApiError && err.status === 422 ? err.detail
+        : err instanceof Error && err.message.startsWith("This file") ? err.message : "Couldn't add the certificate. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function picked(file: File | undefined) {
+    if (!file) return;
+    if (file.size > MAX_CERTIFICATE) {
+      setError("This file is too large (10 MB at most).");
+      return;
+    }
+    upload(async () => [await readAsDataUrl(file), file.name]);
+  }
+
+  async function remove() {
+    if (!window.confirm("Remove this certificate?")) return;
+    setBusy(true);
+    try {
+      await api.deleteCertificate(activityId);
+      onChange(null);
+    } catch {
+      setError("Couldn't remove the certificate. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="race-certificate">
+      <input ref={input} type="file" accept="application/pdf,image/*" hidden
+        onChange={(e) => {
+          picked(e.target.files?.[0]);
+          e.target.value = ""; // the same file can be picked again
+        }} />
+      {certificate ? (
+        <>
+          <a className="certificate-link" href={photoSrc(certificate.url)} target="_blank" rel="noopener noreferrer"
+            title={certificate.filename}>
+            <FileText size={18} aria-hidden />
+            <span>
+              <strong>View certificate</strong>
+              <span className="muted">{certificateInfo(certificate)}</span>
+            </span>
+          </a>
+          <span className="spacer" />
+          <button type="button" className="button ghost small" onClick={() => input.current?.click()} disabled={busy}>
+            <RefreshCw size={14} aria-hidden /> Replace
+          </button>
+          <button type="button" className="button ghost small danger" onClick={remove} disabled={busy}>
+            <Trash2 size={14} aria-hidden /> Remove
+          </button>
+        </>
+      ) : (
+        <>
+          <button type="button" className="button small" onClick={() => input.current?.click()} disabled={busy}>
+            <Upload size={14} aria-hidden /> {busy ? "Adding…" : "Add certificate"}
+          </button>
+          <span className="muted">PDF or image, from your device</span>
+          {!linkOpen && (
+            <button type="button" className="link-button" onClick={() => setLinkOpen(true)} disabled={busy}>
+              or from a link
+            </button>
+          )}
+        </>
+      )}
+      {linkOpen && !certificate && (
+        <form className="photo-input-row certificate-link-form" onSubmit={(e) => {
+          e.preventDefault();
+          if (link.trim()) upload(async () => [link.trim(), decodeURIComponent(link.trim().split(/[?#]/)[0].split("/").pop() || "")]);
+        }}>
+          <input type="url" inputMode="url" placeholder="https://… (link to the PDF on the race's website)" aria-label="Certificate link"
+            value={link} onChange={(e) => setLink(e.target.value)} autoFocus disabled={busy} />
+          <button type="submit" className="button" disabled={busy || !link.trim()}>
+            <Link2 size={15} aria-hidden /> Add
+          </button>
+        </form>
+      )}
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </div>
   );
 }
 

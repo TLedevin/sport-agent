@@ -1,7 +1,7 @@
-import { ChartLine, Medal, Table, Trophy } from "lucide-react";
+import { ChartLine, FileText, Medal, Table, Trophy } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { api, ApiError, type Activity } from "../api";
+import { api, ApiError, photoSrc, type Activity } from "../api";
 import { Segmented } from "../components/EvolutionChart";
 import RaceChart from "../components/RaceChart";
 import { clock, km, meters, paceOrSpeed, shortDate } from "../format";
@@ -314,6 +314,12 @@ function RaceTable({ races }: { races: Race[] }) {
                 <td>
                   <Link to={`/activities/${r.activity.id}`} className="activity-name">{r.activity.name}</Link>
                   {r.pr && <span className="pr-badge" title="A personal record when it was run"><Medal size={11} aria-hidden /> PR</span>}
+                  {res.certificate && (
+                    <a className="certificate-icon" href={photoSrc(res.certificate.url)} target="_blank" rel="noopener noreferrer"
+                      title="Open the certificate" aria-label={`Certificate of ${r.activity.name}`}>
+                      <FileText size={14} aria-hidden />
+                    </a>
+                  )}
                 </td>
                 <td className="num">{r.group === "other" ? km(r.distance) : groupLabel(r.group)}</td>
                 <td className="num strong">{r.time ? clock(r.time) : "–"}</td>

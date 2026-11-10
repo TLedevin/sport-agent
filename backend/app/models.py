@@ -127,6 +127,19 @@ class RaceResult(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime)
 
 
+class RaceCertificate(Base):
+    """The certificate of a race result (organiser's PDF, or a photo or scan of it), as uploaded."""
+
+    __tablename__ = "race_certificates"
+
+    activity_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    filename: Mapped[str] = mapped_column(Unicode(255))
+    content_type: Mapped[str] = mapped_column(String(64))
+    size: Mapped[int] = mapped_column(Integer)  # bytes
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime)
+
+
 class GearPhoto(Base):
     """A photo of a piece of gear, chosen in the app (Garmin has none). Stored shrunk (see photos.py)."""
 
