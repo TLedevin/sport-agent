@@ -5,6 +5,7 @@ import Layout from "./components/Layout";
 import Login from "./Login";
 import ActivitiesPage from "./pages/ActivitiesPage";
 import ActivityDetailPage from "./pages/ActivityDetailPage";
+import CertificatesPage from "./pages/CertificatesPage";
 import DashboardPage from "./pages/DashboardPage";
 import EquipmentPage from "./pages/EquipmentPage";
 import FitnessPage from "./pages/FitnessPage";
@@ -46,6 +47,7 @@ export default function App() {
           <Route path="fitness" element={<FitnessPage />} />
           <Route path="races" element={<RacesPage />} />
           <Route path="photos" element={<PhotosPage />} />
+          <Route path="certificates" element={<CertificatesPage />} />
           <Route path="equipment" element={<EquipmentPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

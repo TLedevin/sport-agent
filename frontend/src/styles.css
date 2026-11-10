@@ -307,6 +307,59 @@ a.button {
   }
 }
 
+/* The "⋯" tab: the pages that don't have a tab of their own. */
+.nav-more {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.nav-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 200px;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.92rem;
+  font-weight: 550;
+}
+
+.nav-menu-item:hover,
+.nav-menu-item:focus-visible {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.nav-menu-item.active {
+  color: var(--text-primary);
+  background: var(--surface-2);
+}
+
+/* On a narrow phone tabs show their names only, but "⋯" has nothing else to show. */
+@media (max-width: 420px) {
+  .nav-link.nav-more svg {
+    display: block;
+  }
+}
+
 /* ---------- Page ---------- */
 
 .page {
@@ -1470,6 +1523,96 @@ a.button {
 .certificate-icon:hover {
   background: var(--surface-2);
   color: var(--text-primary);
+}
+
+/* ---------- Certificates page ---------- */
+
+.certificate-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
+  gap: 16px;
+}
+
+.certificate-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
+/* Certificates are mostly portrait pages: an A4-ish frame, on white like paper. */
+.certificate-preview {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1 / 1.3;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--border);
+}
+
+.certificate-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.certificate-pdf {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: #6b6a66;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.certificate-preview:hover {
+  border-color: var(--text-secondary);
+}
+
+.certificate-preview,
+.certificate-preview:hover {
+  text-decoration: none;
+}
+
+@media (max-width: 560px) {
+  .certificate-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .certificate-card {
+    padding: 8px;
+  }
+}
+
+.certificate-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 4px 4px;
+  font-size: 0.88rem;
+  min-width: 0;
+}
+
+.certificate-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+
+.certificate-open:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
 }
 
 /* ---------- Races page ---------- */
